@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+
+# Build outputs
+dist/
+build/
+
+# Database
+*.db
+*.db-journal
+
+# Prisma
+.prisma/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes (local dev)
+data/

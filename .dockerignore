@@ -1,0 +1,9 @@
+.git
+node_modules
+data
+games
+requirements
+*.md
+.env
+.env.*
+!.env.example

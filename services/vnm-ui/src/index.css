@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+/* Use class-based dark mode (toggled by useTheme adding .dark to <html>)
+   instead of Tailwind v4's default media-query strategy. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── iOS Safari fixes ─────────────────────────────────────── */
+
+/* Prevent rubber-band overscroll that flashes white behind the app */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* Use dynamic viewport height so the app shell doesn't include the
+   area behind the collapsible iOS Safari toolbar.
+   -webkit-fill-available is the older Safari fallback. */
+html {
+  height: -webkit-fill-available;
+}
+
+/* Safe-area padding is applied per-page rather than on <body> so the
+   Player page can go edge-to-edge.  See .safe-area-pad below. */
+body {
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+}
+
+/* Apply safe-area insets to non-player pages (Library, Login, etc.) */
+.safe-area-pad {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Fixed-position modals need their own safe-area padding so the
+   close button / top content doesn't hide behind the notch or
+   Dynamic Island on iOS.  Uses max() to keep at least 1rem. */
+.modal-safe-pad {
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+}
+
+/* Modal card max-height with dvh fallback.
+   90vh works everywhere; 90dvh overrides on browsers that support
+   dynamic-viewport units (iOS Safari 15.4+) so the modal respects
+   the collapsible toolbar height. */
+.modal-max-h {
+  max-height: 90vh;
+  max-height: 90dvh;
+}
+
+/* Gate hover-triggered scale transforms behind a pointer device
+   so iOS taps don't wobble the card grid. */
+@media (hover: hover) and (pointer: fine) {
+  .card-hover-scale:hover {
+    transform: scale(1.05);
+  }
+}
+
+/* ── Animations ───────────────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(90deg); }
+  75% { transform: rotate(90deg); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+/* ── Parallax Star Background ─────────────────────────────── */
+
+@keyframes animStar {
+  from { transform: translateY(0px); }
+  to   { transform: translateY(-2000px); }
+}
+
+.star-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+  z-index: 0;
+}
+
+.stars-small,
+.stars-medium,
+.stars-big {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: transparent;
+}
+
+.stars-small {
+  width: 1px;
+  height: 1px;
+  animation: animStar 50s linear infinite;
+}
+.stars-small::after {
+  content: "";
+  position: absolute;
+  top: 2000px;
+  width: 1px;
+  height: 1px;
+  background: transparent;
+  box-shadow: inherit;
+}
+
+.stars-medium {
+  width: 2px;
+  height: 2px;
+  animation: animStar 100s linear infinite;
+}
+.stars-medium::after {
+  content: "";
+  position: absolute;
+  top: 2000px;
+  width: 2px;
+  height: 2px;
+  background: transparent;
+  box-shadow: inherit;
+}
+
+.stars-big {
+  width: 3px;
+  height: 3px;
+  animation: animStar 150s linear infinite;
+}
+.stars-big::after {
+  content: "";
+  position: absolute;
+  top: 2000px;
+  width: 3px;
+  height: 3px;
+  background: transparent;
+  box-shadow: inherit;
+}

@@ -1,0 +1,58 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Game {
+  id                String    @id                    // Stable fingerprint UUID
+  directoryPath     String    @unique                // Absolute path in container
+  directoryName     String                           // Raw directory name
+  extractedTitle    String                           // Title from options.rpy or dir name
+  vndbId            String?                          // e.g. "v17"
+  vndbTitle         String?                          // English title from VNDB
+  vndbTitleOriginal String?                          // Japanese/original title
+  synopsis          String?                          // Full synopsis
+  developer         String?                          // Developer studio
+  releaseDate       DateTime?                        // First release date
+  lengthMinutes     Int?                             // Estimated play time
+  vndbRating        Float?                           // Score 0-10
+  coverPath         String?                          // Local path to cached cover
+  tags              String   @default("[]")          // JSON array of { id, name, spoiler }
+  screenshots       String   @default("[]")          // JSON array of screenshot URLs
+  buildStatus       String   @default("not_built")   // not_built|queued|building|built|failed|stale
+  hidden            Boolean  @default(false)          // User-hidden from library view
+  buildJobId        String?                          // Most recent build job ID
+  builtAt           DateTime?                        // Last successful build time
+  webBuildPath      String?                          // URL to compiled web export
+  metadataSource    String   @default("unmatched")   // auto|manual|unmatched
+  metadataFetchedAt DateTime?                        // Last VNDB fetch time
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model BuildJob {
+  id          String    @id @default(uuid())
+  gameId      String
+  status      String    @default("queued")    // queued|building|done|failed|cancelled
+  logPath     String?                         // Path to build log file
+  startedAt   DateTime?
+  completedAt DateTime?
+  error       String?                         // Error message if failed
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ScanJob {
+  id              String    @id @default(uuid())
+  status          String    @default("running")  // running|completed|failed
+  gamesFound      Int       @default(0)
+  gamesNew        Int       @default(0)
+  gamesRemoved    Int       @default(0)
+  error           String?
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+}
