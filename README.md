@@ -5,7 +5,7 @@
 **Self-hosted visual novel library manager & web player**
 
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
-[![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -77,7 +77,7 @@ The stack consists of three Docker services communicating over an internal bridg
 | Service | Stack | Role |
 |---|---|---|
 | **vnm-ui** | React 19 · Vite 6 · Tailwind CSS v4 · Nginx | SPA frontend — library page, game detail modals, search/filter/sort, in-browser player |
-| **vnm-api** | Node.js 20 · Fastify 5 · Prisma · SQLite | REST API — game scanning, VNDB metadata enrichment, cover & screenshot caching, build orchestration, SSE log streaming |
+| **vnm-api** | Node.js 24 · Fastify 5 · Prisma · SQLite | REST API — game scanning, VNDB metadata enrichment, cover & screenshot caching, build orchestration, SSE log streaming |
 | **vnm-builder** | Python 3.11 · FastAPI | Build service — Ren'Py SDK `web_build` compilation to WebAssembly, build queue with concurrency control |
 
 ---
@@ -570,7 +570,7 @@ python src/main.py
 | Layer | Technology |
 |---|---|
 | Frontend | [React 19](https://react.dev/) · [Vite 6](https://vite.dev/) · [Tailwind CSS v4](https://tailwindcss.com/) |
-| API Server | [Fastify 5](https://fastify.dev/) · [Node.js 20](https://nodejs.org/) |
+| API Server | [Fastify 5](https://fastify.dev/) · [Node.js 24](https://nodejs.org/) |
 | Build Worker | [FastAPI](https://fastapi.tiangolo.com/) · [Python 3.11](https://www.python.org/) |
 | Database | [Prisma](https://www.prisma.io/) · [SQLite](https://www.sqlite.org/) |
 | Reverse Proxy | [Nginx](https://nginx.org/) |

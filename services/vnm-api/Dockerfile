@@ -1,5 +1,5 @@
 # ── Stage 1: Build ─────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ RUN npx prisma generate
 COPY . .
 
 # ── Stage 2: Production ───────────────────────────────
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Install gosu for user switching
 # Install extraction tools: unzip (ZIP), bzip2+tar (tar.bz2), 7zip (RAR)

@@ -4,9 +4,12 @@
   "private": true,
   "description": "VNoctis Manager — REST API service (Fastify + Prisma)",
   "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "node --watch src/index.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:deploy": "prisma migrate deploy"
@@ -22,11 +25,9 @@
     "@prisma/client": "^6.5.0",
     "fastify": "^5.3.3",
     "jsonwebtoken": "^9.0.3",
-    "pino": "^9.6.0",
-    "uuid": "^11.1.0"
+    "pino": "^9.6.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9",
     "prisma": "^6.5.0"
   }
 }

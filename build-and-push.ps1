@@ -16,7 +16,7 @@ param(
     [switch]$NoCache
 )
 
-$Registry = "docker.yourrepo.com"
+$Registry = "docker.lessthanpi.com"
 $ProjectName = "vnm"
 $ErrorActionPreference = "Stop"
 

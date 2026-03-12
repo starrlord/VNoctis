@@ -2,7 +2,7 @@
  * Cover art downloader.
  *
  * Fetches a VNDB cover image URL and saves it locally.
- * Uses Node.js 20 built-in `fetch` — no external dependencies.
+ * Uses Node.js built-in `fetch` — no external dependencies.
  */
 
 import { mkdir, writeFile, access } from 'node:fs/promises';
