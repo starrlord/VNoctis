@@ -1,12 +1,55 @@
 /**
- * Internal builder-callback route plugin.
+ * Internal route plugin.
  *
- * These endpoints are called by vnm-builder to report build status and log
- * lines back to the API.  They are NOT intended for the UI / external clients.
+ * These endpoints are used for inter-service communication:
+ *   - Builder callbacks (build status & log lines)
+ *   - Client-side error reporting from the UI
+ *
+ * They are NOT protected by authentication (skipped in the onRequest hook).
  *
  * @param {import('fastify').FastifyInstance} fastify
  */
 export default async function internalRoutes(fastify) {
+  // ── Client-side error reporting ───────────────────────────
+  /**
+   * POST /internal/client-error
+   *
+   * Accepts error reports from the UI's ErrorBoundary and logs them
+   * server-side so they appear in the persistent log file and Docker logs.
+   *
+   * Rate-limited to 100 requests per minute to prevent log flooding.
+   * Body capped at 64 KB.
+   */
+  fastify.post('/internal/client-error', {
+    config: {
+      rateLimit: {
+        max: 100,
+        timeWindow: '1 minute',
+      },
+    },
+    bodyLimit: 65536,
+  }, async (request, reply) => {
+    const { message, stack, componentStack, url, userAgent } = request.body || {};
+
+    if (!message || typeof message !== 'string') {
+      return reply.code(400).send({ code: 'INVALID_BODY', message: 'Body must include a "message" string.' });
+    }
+
+    fastify.log.error(
+      {
+        source: 'client',
+        errorMessage: message.slice(0, 1024),
+        stack: typeof stack === 'string' ? stack.slice(0, 4096) : undefined,
+        componentStack: typeof componentStack === 'string' ? componentStack.slice(0, 2048) : undefined,
+        url: typeof url === 'string' ? url.slice(0, 256) : undefined,
+        userAgent: typeof userAgent === 'string' ? userAgent.slice(0, 256) : undefined,
+      },
+      'Client-side error reported'
+    );
+
+    return { ok: true };
+  });
+
   /**
    * POST /internal/build/:jobId/status
    *

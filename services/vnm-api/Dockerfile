@@ -29,7 +29,7 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 
 # Create directories that may be used as mount points
-RUN mkdir -p /data /covers /web-builds /games
+RUN mkdir -p /data /data/logs /covers /web-builds /games
 
 EXPOSE 3001
 

@@ -1,7 +1,7 @@
 # Security Audit — VNoctis Manager
 
-**Audit date:** 2026-03-07
-**Scope:** Full codebase review — authentication, session management, input validation, Docker configuration, API security
+**Audit date:** 2026-03-12 (re-audited after Node.js 24 upgrade + logging improvements)
+**Scope:** Full codebase review — authentication, session management, input validation, Docker configuration, API security, error handling
 
 ---
 
@@ -59,7 +59,7 @@ const passwordMatch =
 
 ### Finding #3 — Internal API endpoints unauthenticated (Medium)
 
-**File:** `services/vnm-api/src/index.js` lines 143–151
+**File:** `services/vnm-api/src/index.js` lines 163–171
 
 ```js
 if (
@@ -73,21 +73,29 @@ if (
 }
 ```
 
-The `/api/v1/internal/build/:jobId/status` and `/api/v1/internal/build/:jobId/log` endpoints in `services/vnm-api/src/routes/internal.js` are unauthenticated. They're intended for service-to-service calls from vnm-builder, but they're reachable through the nginx reverse proxy at `/api/internal/...`.
+The following endpoints in `services/vnm-api/src/routes/internal.js` are unauthenticated:
+- `POST /api/v1/internal/build/:jobId/status` — builder status callbacks
+- `POST /api/v1/internal/build/:jobId/log` — builder log line forwarding
+- `POST /api/v1/internal/client-error` — **[NEW]** client-side error reporting from the UI's ErrorBoundary
+
+These are intended for inter-service and client-error communication, but they're reachable through the nginx reverse proxy at `/api/internal/...`.
 
 **Risk:** An attacker who can reach the nginx front-end could:
 - Forge build status callbacks (`POST /api/v1/internal/build/:jobId/status` with `{ status: "done" }`)
 - Inject arbitrary log lines (`POST /api/v1/internal/build/:jobId/log`)
 - Change any game's `buildStatus` to `built`, `failed`, etc.
+- Inject fake client error reports (see Finding #12)
 
-**Recommendation:** Add a shared secret header between vnm-api and vnm-builder:
+**Mitigation added (partial):** The new `/internal/client-error` endpoint is rate-limited to 100 requests/minute via `@fastify/rate-limit` with a 64 KB body cap, and all fields are truncated before logging. The builder callback endpoints remain unprotected.
+
+**Recommendation:** Add a shared secret header between vnm-api and vnm-builder for builder callbacks:
 ```js
 // In internal.js onRequest hook:
 if (request.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) {
   return reply.code(403).send({ code: 'FORBIDDEN' });
 }
 ```
-Or block `/api/v1/internal/` at the nginx layer so it's only reachable on the Docker internal network.
+Or block `/api/v1/internal/build/` at the nginx layer so builder callbacks are only reachable on the Docker internal network, while keeping `/api/v1/internal/client-error` open for the browser.
 
 ---
 
@@ -191,7 +199,7 @@ The builder container runs as root. The comment explains this is intentional bec
 
 **Risk:** If an attacker could execute arbitrary code inside the builder container (e.g., through a malicious Ren'Py script), they'd have root inside the container. Docker's namespace isolation still applies, but the blast radius within the container is larger.
 
-**Recommendation:** Acceptable given the constraint. The builder only has access to `/games` (rw), `/renpy-sdk` (rw), and `/web-builds` — no access to `/data` (where the DB and JWT secret live).
+**Recommendation:** Acceptable given the constraint. The builder has access to `/games` (rw), `/renpy-sdk` (rw), `/web-builds`, and `/data/logs` (rw, shared log directory) — no access to `/data/vnm.db` (database) or `/data/.jwt-secret`.
 
 ---
 
@@ -235,21 +243,48 @@ add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
 ---
 
+### Finding #12 — Client error endpoint allows log injection (Low)
+
+**File:** `services/vnm-api/src/routes/internal.js`
+
+```js
+fastify.post('/internal/client-error', {
+  config: { rateLimit: { max: 100, timeWindow: '1 minute' } },
+  bodyLimit: 65536,
+}, async (request, reply) => { ... });
+```
+
+The `POST /api/v1/internal/client-error` endpoint accepts error reports from the UI's `ErrorBoundary` and logs them to the persistent log file. It's unauthenticated (part of the `/api/v1/internal/` prefix).
+
+**Risk:** An attacker who can reach the nginx front-end could inject fake error entries into `vnm-api.log` at a rate of 100/minute. All fields are truncated (`message`: 1KB, `stack`: 4KB, `componentStack`: 2KB, `url`/`userAgent`: 256 bytes each), so individual payloads are bounded.
+
+**Mitigations in place:**
+- Rate limited to 100 requests per minute via `@fastify/rate-limit`
+- Body capped at 64 KB
+- All string fields truncated before logging
+- Log entries are tagged with `source: "client"` so they can be filtered/identified
+- Logs are structured JSON (not plaintext), so injected content can't break line parsing
+
+**Recommendation:** Acceptable for the current threat model. The rate limit and field truncation prevent meaningful abuse. If hardening is desired, add auth-token-in-body or move to a separate authenticated endpoint.
+
+---
+
 ## Summary Matrix
 
 | # | Finding | Severity | Action Needed |
 |---|---------|----------|---------------|
 | 1 | Token in localStorage | Low | Acceptable for self-hosted SPA |
 | 2 | Plaintext password comparison | Low | Acceptable — env var only, timing-safe |
-| **3** | **Internal endpoints unauthenticated** | **Medium** | **Add shared secret or nginx block** |
+| **3** | **Internal endpoints unauthenticated** | **Medium** | **Add shared secret for builder callbacks, or nginx block** |
 | 4 | Build log SSE unauthenticated | Low | Optional: token-in-query-param |
 | 5 | Cover images unauthenticated | Low | Acceptable for images |
 | ~~6~~ | ~~Shell injection risk in exec~~ | ~~Medium~~ | ✅ **Resolved** — switched to `execFileAsync` (no shell) |
 | 7 | CORS allows all origins | Low | Acceptable with Bearer tokens |
 | 8 | No server-side token revocation | Low | Optional: rotate secret on change |
-| 9 | Builder runs as root | Low | Intentional, isolated volumes |
+| 9 | Builder runs as root | Low | Intentional, isolated volumes (+`/data/logs` shared) |
 | **10** | **SSRF via import-url** | **Low–Medium** | **Optional: block internal ranges** |
 | 11 | Nginx missing security headers | Low | Add standard headers |
+| 12 | Client error endpoint log injection | Low | Rate-limited + field-truncated; acceptable |
 
 ---
 
@@ -257,16 +292,20 @@ add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
 - **JWT secret:** Cryptographically random, auto-generated, persisted with restrictive file permissions (`0o600`)
 - **Timing-safe comparison** for credentials (`timingSafeEqual`)
-- **Rate limiting** on login (5 per minute via `@fastify/rate-limit`)
+- **Rate limiting** on login (5 per minute via `@fastify/rate-limit`) and on client error reporting (100 per minute)
 - **Login failure logging** with IP address
 - **JWT expiration** enforced (configurable TTL, default 30 days)
 - **Password required at startup** — hard fail with `process.exit(1)` if missing
 - **Docker network isolation** — internal bridge network, only nginx exposes a port
+- **Docker log rotation** — all containers configured with `json-file` driver, `max-size: 10m`, `max-file: 3` to prevent disk exhaustion
 - **Resource limits** on the builder container (`mem_limit: 16g`, `cpus: 8`)
 - **Multi-stage Docker builds** (smaller attack surface, no dev dependencies in production)
 - **Non-root nginx container** (vnm-ui runs as `USER vnm`)
 - **Input validation** with whitelisted editable fields in PATCH endpoints
 - **Global error handler** that doesn't leak stack traces
+- **Unhandled error safety nets** — `process.on('unhandledRejection')` and `process.on('uncaughtException')` catch and log errors that would otherwise crash silently
+- **Persistent structured logging** — both vnm-api and vnm-builder write JSON logs to `/data/logs/` for post-mortem analysis, in addition to stdout for Docker
+- **Client-side error forwarding** — React `ErrorBoundary` reports errors to the API with rate limiting and field truncation; entries tagged with `source: "client"` for easy filtering
 - **Sanitised folder names** on import (strips path traversal and dangerous characters)
 - **Shell-free command execution** — all external commands (`unzip`, `tar`, `7z`, `chmod`, `unrpa`) use `execFile` (no shell) to prevent injection
 - **Game ID validation** — 32-character hex string check on all ID parameters

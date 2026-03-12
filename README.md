@@ -138,7 +138,8 @@ Set **`VNM_ROOT`** to a single root directory and all sub-paths are derived auto
 ${VNM_ROOT}/
 ├── games/          # Ren'Py visual novel game directories
 ├── renpy-sdk/      # Ren'Py SDK (auto-downloaded on first start)
-├── data/           # SQLite database
+├── data/           # SQLite database and persistent logs
+│   └── logs/       # vnm-api.log + vnm-builder.log
 ├── covers/         # Cached cover art images
 ├── screenshots/    # Cached VNDB screenshot images
 └── web-builds/     # Compiled web build output
@@ -190,6 +191,7 @@ ${VNM_ROOT}/
 | Variable | Default | Description |
 |---|---|---|
 | `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
+| `LOG_PATH` | `/data/logs` | Directory for persistent log files inside the container. Both vnm-api and vnm-builder write structured JSON logs here (`vnm-api.log` and `vnm-builder.log`). Logs are also written to stdout for `docker compose logs`. |
 | `TZ` | `America/Chicago` | Container timezone |
 | `PUID` | `99` | User ID for file permission mapping on bind mounts |
 | `PGID` | `100` | Group ID for file permission mapping on bind mounts |
@@ -432,6 +434,9 @@ All endpoints are prefixed with `/api/v1` and proxied through Nginx.
 | `DELETE` | `/build/:jobId` | Cancel a queued or in-progress build |
 | `POST` | `/library/import` | Upload a game archive — `.zip`, `.tar.bz2`, or `.rar` (multipart form, field: `file`) |
 | `POST` | `/library/import-url` | Import from URL (JSON body: `{ "url": "..." }`, streams NDJSON progress; supports `.zip`, `.tar.bz2`, `.rar`) |
+| `POST` | `/internal/client-error` | Report a client-side error for persistent logging (JSON body: `{ message, stack?, componentStack?, url?, userAgent? }`; rate-limited to 100/min) |
+| `POST` | `/internal/build/:jobId/status` | Builder callback — update build job status (`building`, `done`, `failed`) |
+| `POST` | `/internal/build/:jobId/log` | Builder callback — append a log line to the in-memory buffer for SSE subscribers |
 
 > **Authentication:** All endpoints except `/health`, `/auth/*`, `/internal/*`, `/covers/*`, and `/build/:jobId/log` (SSE) require a valid `Authorization: Bearer <token>` header. Obtain a token via `POST /auth/login`.
 
@@ -590,6 +595,7 @@ python src/main.py
 | **"App won't start — missing VNM_ADMIN_PASSWORD"** | Set `VNM_ADMIN_PASSWORD` in your `.env` file. This variable is required and has no default value. |
 | **"Session expired / logged out unexpectedly"** | Increase `VNM_SESSION_TTL_DAYS` in `.env` (default is 30 days). Clearing browser data also removes the session. |
 | **"Forgot admin password"** | Change `VNM_ADMIN_PASSWORD` in `.env` and restart the API container (`docker compose restart vnm-api`). No database migration needed — credentials are checked against environment variables. |
+| **Finding error logs** | Persistent logs are at `${VNM_ROOT}/data/logs/vnm-api.log` and `${VNM_ROOT}/data/logs/vnm-builder.log` (structured JSON, one object per line). You can also use `docker compose logs vnm-api` / `docker compose logs vnm-builder` for recent stdout output. Client-side (browser) errors are forwarded to the API log via the `ErrorBoundary` component. |
 
 ---
 

@@ -19,6 +19,23 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, errorInfo) {
     // Always log errors to console (development and production)
     console.error('[ErrorBoundary] Caught rendering error:', error, errorInfo);
+
+    // Report error to backend for persistent logging (fire-and-forget)
+    try {
+      fetch('/api/v1/internal/client-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: error?.message || String(error),
+          stack: error?.stack,
+          componentStack: errorInfo?.componentStack,
+          url: window.location.href,
+          userAgent: navigator.userAgent,
+        }),
+      }).catch(() => {});
+    } catch {
+      // Silently ignore — we already logged to console
+    }
   }
 
   componentDidUpdate(prevProps) {

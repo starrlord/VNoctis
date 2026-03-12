@@ -7,6 +7,7 @@ import { execSync } from 'node:child_process';
 import { mkdirSync, accessSync, constants, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import pino from 'pino';
 
 import healthRoutes from './routes/health.js';
 import authRoutes from './routes/auth.js';
@@ -22,10 +23,37 @@ import { runBatchEnrichment } from './services/enrichment.js';
 import { checkStaleBuilds } from './services/buildOrchestrator.js';
 import { DirectoryWatcher } from './services/watcher.js';
 
+// ── Persistent log file ───────────────────────────────────
+const logDir = process.env.LOG_PATH || '/data/logs';
+try {
+  mkdirSync(logDir, { recursive: true });
+} catch {
+  // Will fall back to stdout-only if /data is not writable yet
+}
+
+const logStreams = [
+  { stream: process.stdout },
+];
+
+// Add file transport for persistent logs if writable
+try {
+  accessSync(logDir, constants.W_OK);
+  logStreams.push({
+    stream: pino.destination({
+      dest: `${logDir}/vnm-api.log`,
+      sync: false,
+      mkdir: true,
+    }),
+  });
+} catch {
+  // /data/logs not writable — stdout only until entrypoint fixes permissions
+}
+
 // ── Fastify instance ──────────────────────────────────────
 const fastify = Fastify({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
+    stream: pino.multistream(logStreams),
   },
 });
 
@@ -401,5 +429,15 @@ const shutdown = async (signal) => {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// ── Unhandled error safety net ────────────────────────────
+process.on('unhandledRejection', (reason) => {
+  fastify.log.error({ err: reason }, 'Unhandled promise rejection');
+});
+
+process.on('uncaughtException', (error) => {
+  fastify.log.fatal({ err: error }, 'Uncaught exception — shutting down');
+  process.exit(1);
+});
 
 start();
