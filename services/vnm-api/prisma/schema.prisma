@@ -13,6 +13,7 @@ model Game {
   directoryName     String                           // Raw directory name
   extractedTitle    String                           // Title from options.rpy or dir name
   vndbId            String?                          // e.g. "v17"
+  steamAppId        String?                          // Steam application ID
   vndbTitle         String?                          // English title from VNDB
   vndbTitleOriginal String?                          // Japanese/original title
   synopsis          String?                          // Full synopsis

@@ -27,7 +27,7 @@
 | <img src="extras/screenshots/1-gallery-view.png" width="460" alt="Gallery View"> | <img src="extras/screenshots/2a-import-game.png" width="460" alt="Import Game"> |
 | **Gallery View** — Browse your library in a responsive card grid | **Import Game** — Upload an archive or paste a URL |
 | <img src="extras/screenshots/2b-extracting-game.png" width="460" alt="Extracting Game"> | <img src="extras/screenshots/3-edit-metadata.png" width="460" alt="Edit Metadata"> |
-| **Extracting Game** — Real-time progress during extraction | **Edit Metadata** — Manually edit or refresh from VNDB |
+| **Extracting Game** — Real-time progress during extraction | **Edit Metadata** — Manually edit or refresh from VNDB / Steam |
 | <img src="extras/screenshots/4-view-game-details.png" width="460" alt="View Game Details"> | <img src="extras/screenshots/5a-building-game.png" width="460" alt="Building Game"> |
 | **View Game Details** — Cover art, synopsis, tags, screenshots | **Building Game** — Live log streaming during WebAssembly build |
 | <img src="extras/screenshots/5b-building-game.png" width="460" alt="Build Queue"> | <img src="extras/screenshots/6-loading-game.png" width="460" alt="Loading Game"> |
@@ -41,12 +41,13 @@
 - **Pagination** — Page-based navigation with prev/next controls, ellipsis compression for large libraries, "Show All" toggle, and responsive sibling-window that tightens on mobile
 - **Hide / Unhide Games** — Hide games from the library view via a hover icon on cards or a button in the detail modal; hidden count shown as a pill badge in the sort bar with one-click toggle to reveal hidden items; "Unhide All" button to restore all hidden games at once
 - **VNDB Integration** — Fuzzy-matches game directories to VNDB entries and fetches cover art, synopsis, ratings, developer, tags, screenshots, release date, and estimated play time
+- **Steam Integration** — Search the Steam catalog by name (games + DLC), link any game to a Steam app ID, and pull cover art (library capsule), description, developer, release date, genres, screenshots, and Metacritic score; locally-cached app list refreshes every 24 hours
 - **Web Build System** — One-click Ren'Py → WebAssembly compilation with real-time SSE log streaming, build queue management, and cancel/retry support; build logs open in a dedicated full-screen viewer with line numbers, color-coded output, filtering, auto-scroll, and copy-to-clipboard
 - **Image Compression** — Automatic lossy recompression of JPEG, PNG, and WebP images during web builds using a symlink overlay — original game files are never modified, web builds are 30–60% smaller
 - **Pre-built ZIP Import** — Drop a pre-built web distribution `.zip` into a game directory and the scanner auto-detects, extracts, and marks it as built — no rebuild needed; a **"Mark as Playable"** fallback button lets you bypass the build system entirely for manually extracted web builds
 - **Game Import via UI** — Upload a `.zip`, `.tar.bz2`, or `.rar` game archive or paste a remote URL — with real-time progress bars, drag-and-drop, and automatic extraction into the games directory
 - **In-Browser Player** — Full-screen iframe player with chrome bar, orientation hints for mobile, and a save warning toast
-- **Metadata Management** — Edit metadata manually, refresh from VNDB, force-link or unlink VNDB IDs, custom covers
+- **Metadata Management** — Edit metadata manually, refresh from VNDB or Steam, force-link or unlink VNDB / Steam IDs via tabbed search with autocomplete, custom covers via URL
 - **Dark / Light Theme** — System-aware theme toggle with manual override, animated star-field background on build screens and library (dark mode), fully responsive from mobile to desktop
 - **Authentication** — Single-user login with environment-configurable credentials, persistent JWT sessions that survive browser restarts, automatic session validation, and login rate limiting
 - **Progressive Downloads** — Automatically generates `progressive_download.txt` rules so GUI images load upfront while game art, music, and voice stream on demand — existing rules in a game directory are preserved
@@ -77,7 +78,7 @@ The stack consists of three Docker services communicating over an internal bridg
 | Service | Stack | Role |
 |---|---|---|
 | **vnm-ui** | React 19 · Vite 6 · Tailwind CSS v4 · Nginx | SPA frontend — library page, game detail modals, search/filter/sort, in-browser player |
-| **vnm-api** | Node.js 24 · Fastify 5 · Prisma · SQLite | REST API — game scanning, VNDB metadata enrichment, cover & screenshot caching, build orchestration, SSE log streaming |
+| **vnm-api** | Node.js 24 · Fastify 5 · Prisma · SQLite | REST API — game scanning, VNDB & Steam metadata enrichment, cover & screenshot caching, build orchestration, SSE log streaming |
 | **vnm-builder** | Python 3.11 · FastAPI | Build service — Ren'Py SDK `web_build` compilation to WebAssembly, build queue with concurrency control |
 
 ---

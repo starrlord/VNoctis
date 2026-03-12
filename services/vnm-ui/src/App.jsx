@@ -7,6 +7,7 @@ import Navbar from './components/Navbar';
 import Library from './pages/Library';
 import Player from './pages/Player';
 import BuildLog from './pages/BuildLog';
+import Gallery from './pages/Gallery';
 import Login from './pages/Login';
 import ImportGameModal from './components/ImportGameModal';
 import useTheme from './hooks/useTheme';
@@ -50,9 +51,10 @@ function AppContent() {
   const location = useLocation();
 
   const isLoginPage = location.pathname === '/login';
-  const isPlayerPage = location.pathname.startsWith('/play/');
+  const isPlayerPage = location.pathname.startsWith('/play/') || location.pathname.startsWith('/gallery/play/');
   const isBuildLogPage = location.pathname.startsWith('/build-log/');
-  const isFullscreenPage = isPlayerPage || isBuildLogPage;
+  const isGalleryPage = location.pathname.startsWith('/gallery');
+  const isFullscreenPage = isPlayerPage || isBuildLogPage || isGalleryPage;
 
   return (
     <div className={`min-h-dvh bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-50 transition-colors duration-200${isFullscreenPage ? '' : ' safe-area-pad'}`}>
@@ -91,6 +93,22 @@ function AppContent() {
             element={
               <RequireAuth>
                 <BuildLog />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/gallery"
+            element={
+              <RequireAuth>
+                <Gallery />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/gallery/play/:gameId"
+            element={
+              <RequireAuth>
+                <Player />
               </RequireAuth>
             }
           />

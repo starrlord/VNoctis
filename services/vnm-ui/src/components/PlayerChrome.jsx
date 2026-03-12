@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 /**
  * Compact top-bar chrome displayed over the game iframe.
@@ -28,6 +28,10 @@ export default function PlayerChrome({
   showFullscreenButton = true,
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isGalleryPlayer = location.pathname.startsWith('/gallery/play/');
+  const backPath = isGalleryPlayer ? '/gallery' : '/';
+  const backLabel = isGalleryPlayer ? 'Gallery' : 'Library';
 
   // In fullscreen the bar slides in/out based on `visible`
   const barClasses = isFullscreen
@@ -42,9 +46,9 @@ export default function PlayerChrome({
     >
       {/* ---- Left: Back to library ---- */}
       <button
-        onClick={() => navigate('/')}
+        onClick={() => navigate(backPath)}
         className="flex items-center gap-1.5 text-gray-300 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-md px-2 py-1.5 min-h-[44px] transition-colors"
-        aria-label="Back to library"
+        aria-label={`Back to ${backLabel.toLowerCase()}`}
       >
         {/* ← arrow */}
         <svg
@@ -60,7 +64,7 @@ export default function PlayerChrome({
             d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
           />
         </svg>
-        <span className="text-sm font-medium hidden sm:inline">Library</span>
+        <span className="text-sm font-medium hidden sm:inline">{backLabel}</span>
       </button>
 
       {/* ---- Centre: Game title ---- */}

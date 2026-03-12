@@ -1,14 +1,17 @@
 /**
  * Enrichment orchestrator.
  *
- * Ties together VNDB search, fuzzy matching, synopsis cleaning, and
+ * Ties together VNDB/Steam search, fuzzy matching, synopsis cleaning, and
  * cover downloading to populate game metadata automatically.
  */
 
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { matchTitle } from './matcher.js';
 import { downloadCover } from './coverDownloader.js';
-import { downloadScreenshots } from './screenshotDownloader.js';
+import { downloadScreenshots, removeScreenshots } from './screenshotDownloader.js';
 import { cleanSynopsis } from './synopsisCleaner.js';
+import { SteamClient } from './steamClient.js';
 
 /** Default metadata TTL in days */
 const DEFAULT_TTL_DAYS = 30;
@@ -186,6 +189,16 @@ export async function enrichGameById(vndbId, game, prisma, vndbClient, coversPat
 async function applyMatch(vn, game, prisma, coversPath, screenshotsPath) {
   const data = mapVnToGameData(vn);
 
+  // Clear existing cover so downloadCover fetches a fresh image
+  if (coversPath) {
+    try { await rm(join(coversPath, `${game.id}.jpg`), { force: true }); } catch { /* ignore */ }
+  }
+
+  // Clear existing screenshots so fresh ones are downloaded
+  if (screenshotsPath) {
+    await removeScreenshots(game.id, screenshotsPath);
+  }
+
   // Download cover art
   if (vn.image?.url) {
     const localCover = await downloadCover(vn.image.url, game.id, coversPath);
@@ -273,4 +286,160 @@ export async function runBatchEnrichment(prisma, vndbClient, coversPath, screens
   }
 
   return { enriched, failed, skipped };
+}
+
+// ── Steam Enrichment ────────────────────────────────────────
+
+/**
+ * Parse a Steam release date string into a Date (or null).
+ * Steam formats vary: "Mar 12, 2020", "Coming Soon", "2020", etc.
+ *
+ * @param {object|null} releaseInfo - { coming_soon: boolean, date: string }
+ * @returns {Date|null}
+ */
+function parseSteamReleaseDate(releaseInfo) {
+  if (!releaseInfo || releaseInfo.coming_soon || !releaseInfo.date) return null;
+
+  const dateStr = releaseInfo.date;
+
+  // Try direct Date parse (handles "Mar 12, 2020" etc.)
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d;
+
+  // Try year-only: "2020"
+  if (/^\d{4}$/.test(dateStr)) {
+    const yearDate = new Date(dateStr + '-01-01T00:00:00Z');
+    return isNaN(yearDate.getTime()) ? null : yearDate;
+  }
+
+  return null;
+}
+
+/**
+ * Map a Steam appdetails response to Prisma-compatible game update data.
+ *
+ * @param {object} details - Steam appdetails data object.
+ * @param {string|number} appid - Steam app ID.
+ * @returns {object} Fields ready for prisma.game.update({ data }).
+ */
+function mapSteamToGameData(details, appid) {
+  // Map genres to the same tag format as VNDB
+  const tags = details.genres
+    ?.slice(0, 20)
+    ?.map((g) => ({ name: g.description, spoiler: 0 })) || [];
+
+  // Map screenshots to URL array
+  const screenshots = details.screenshots
+    ?.slice(0, 8)
+    ?.map((s) => s.path_full) || [];
+
+  return {
+    steamAppId: String(appid),
+    vndbTitle: details.name || null,
+    vndbTitleOriginal: null, // Steam doesn't provide original-language titles
+    synopsis: details.short_description || details.about_the_game || null,
+    developer: details.developers?.[0] || null,
+    releaseDate: parseSteamReleaseDate(details.release_date),
+    lengthMinutes: null, // Steam doesn't provide play-time estimates
+    vndbRating: details.metacritic?.score != null
+      ? details.metacritic.score / 10
+      : null,
+    tags: JSON.stringify(tags),
+    screenshots: JSON.stringify(screenshots),
+  };
+}
+
+/**
+ * Enrich a game by fetching a specific Steam app ID.
+ *
+ * @param {string|number} steamAppId   - Steam application ID.
+ * @param {object} game                - Prisma Game record.
+ * @param {import('@prisma/client').PrismaClient} prisma
+ * @param {import('./steamClient.js').SteamClient} steamClient
+ * @param {string} coversPath
+ * @param {string} screenshotsPath
+ * @param {object} [logger]
+ * @returns {Promise<object>} Updated game record.
+ */
+export async function enrichGameBySteamId(steamAppId, game, prisma, steamClient, coversPath, screenshotsPath, logger) {
+  const log = logger || console;
+
+  try {
+    const details = await steamClient.getAppDetails(steamAppId);
+
+    if (!details) {
+      return prisma.game.update({
+        where: { id: game.id },
+        data: {
+          metadataSource: 'unmatched',
+          metadataFetchedAt: new Date(),
+        },
+      });
+    }
+
+    return applySteamMatch(details, steamAppId, game, prisma, coversPath, screenshotsPath);
+  } catch (err) {
+    (log.error || log.log).call(log,
+      { event: 'steam_enrichment_failed', gameId: game.id, steamAppId, error: err.message },
+      `Failed to enrich game ${game.id} from Steam app ${steamAppId}`
+    );
+    return game;
+  }
+}
+
+/**
+ * Apply a matched Steam app to a game record.
+ *
+ * @param {object} details       - Steam appdetails data object.
+ * @param {string|number} appid  - Steam app ID.
+ * @param {object} game          - Prisma Game record.
+ * @param {import('@prisma/client').PrismaClient} prisma
+ * @param {string} coversPath
+ * @param {string} screenshotsPath
+ * @returns {Promise<object>} Updated game record.
+ */
+async function applySteamMatch(details, appid, game, prisma, coversPath, screenshotsPath) {
+  const data = mapSteamToGameData(details, appid);
+
+  // Clear existing cover so downloadCover fetches a fresh image
+  if (coversPath) {
+    try { await rm(join(coversPath, `${game.id}.jpg`), { force: true }); } catch { /* ignore */ }
+  }
+
+  // Clear existing screenshots so fresh ones are downloaded
+  if (screenshotsPath) {
+    await removeScreenshots(game.id, screenshotsPath);
+  }
+
+  // Download cover art: library_600x900 → hero_capsule → header_image
+  const libraryCapsuleUrl = SteamClient.getLibraryCapsuleUrl(appid);
+  let localCover = await downloadCover(libraryCapsuleUrl, game.id, coversPath);
+
+  if (!localCover) {
+    const heroCapsuleUrl = SteamClient.getHeroCapsuleUrl(appid);
+    localCover = await downloadCover(heroCapsuleUrl, game.id, coversPath);
+  }
+
+  if (!localCover && details.header_image) {
+    localCover = await downloadCover(details.header_image, game.id, coversPath);
+  }
+
+  if (localCover) {
+    data.coverPath = localCover;
+  }
+
+  // Download screenshots locally
+  const remoteUrls = details.screenshots?.slice(0, 8)?.map((s) => s.path_full) || [];
+  if (remoteUrls.length > 0 && screenshotsPath) {
+    const localPaths = await downloadScreenshots(remoteUrls, game.id, screenshotsPath);
+    data.screenshots = JSON.stringify(localPaths);
+  }
+
+  data.metadataSource = 'auto';
+  data.metadataFetchedAt = new Date();
+
+  return prisma.game.update({
+    where: { id: game.id },
+    data,
+  });
 }

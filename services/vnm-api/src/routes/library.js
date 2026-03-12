@@ -242,6 +242,7 @@ export default async function libraryRoutes(fastify) {
     const editableFields = [
       'extractedTitle',
       'vndbId',
+      'steamAppId',
       'vndbTitle',
       'vndbTitleOriginal',
       'synopsis',

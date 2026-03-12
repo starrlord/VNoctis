@@ -19,6 +19,7 @@ import importRoutes from './routes/import.js';
 import internalRoutes from './routes/internal.js';
 import { scanGamesDirectory } from './services/scanner.js';
 import { VNDBClient } from './services/vndbClient.js';
+import { SteamClient } from './services/steamClient.js';
 import { runBatchEnrichment } from './services/enrichment.js';
 import { checkStaleBuilds } from './services/buildOrchestrator.js';
 import { DirectoryWatcher } from './services/watcher.js';
@@ -102,6 +103,16 @@ const vndbClient = new VNDBClient({
 });
 
 fastify.decorate('vndbClient', vndbClient);
+
+// ── Steam client ──────────────────────────────────────────
+const steamClient = new SteamClient({
+  cachePath: process.env.STEAM_CACHE_PATH || '/data/steam-applist.json',
+  ttlHours: parseInt(process.env.STEAM_APPLIST_TTL_HOURS, 10) || 24,
+  rateDelayMs: parseInt(process.env.STEAM_RATE_DELAY_MS, 10) || 1500,
+  logger: fastify.log,
+});
+
+fastify.decorate('steamClient', steamClient);
 
 // ── Covers path ───────────────────────────────────────────
 const coversPath = process.env.COVERS_PATH || '/covers';

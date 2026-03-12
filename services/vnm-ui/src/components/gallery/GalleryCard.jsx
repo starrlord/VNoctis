@@ -1,0 +1,108 @@
+import { useState } from 'react';
+import { generateGradient, formatRating, getRatingColor, truncate } from '../../lib/utils';
+
+/**
+ * Netflix-style portrait poster card for the gallery.
+ * Shows cover image in ~2:3 aspect ratio with hover effects.
+ *
+ * @param {{
+ *   game: object,
+ *   onClick: (game: object) => void,
+ *   onPlay?: (game: object) => void,
+ *   size?: 'normal' | 'large',
+ * }} props
+ */
+export default function GalleryCard({ game, onClick, onPlay, size = 'normal' }) {
+  const [hovered, setHovered] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  const title = game.vndbTitle || game.extractedTitle || 'Unknown';
+  const coverUrl =
+    game.coverPath && !imgError
+      ? `/api/v1/covers/${game.id}?t=${encodeURIComponent(game.updatedAt || '')}`
+      : null;
+  const gradient = generateGradient(title);
+
+  const widthClass = size === 'large' ? 'w-48 sm:w-56' : 'w-36 sm:w-44';
+
+  return (
+    <div
+      className={`gallery-card-hover relative flex-shrink-0 ${widthClass} cursor-pointer select-none`}
+      onClick={() => onClick?.(game)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Poster image — 2:3 aspect ratio */}
+      <div className="relative aspect-[2/3] w-full rounded-md overflow-hidden shadow-lg shadow-black/40">
+        {coverUrl ? (
+          <img
+            src={coverUrl}
+            alt={title}
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{ background: gradient }}
+          >
+            <div className="flex items-center justify-center h-full">
+              <span className="text-5xl font-bold text-white/20 select-none">
+                {title.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Rating badge — top-right */}
+        {game.vndbRating != null && (
+          <div
+            className={`absolute top-2 right-2 px-2 py-0.5 rounded text-xs font-bold text-white shadow-md ${getRatingColor(game.vndbRating)}`}
+          >
+            {formatRating(game.vndbRating)}
+          </div>
+        )}
+
+        {/* Hover overlay */}
+        <div
+          className={`absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent flex flex-col justify-end p-3 transition-opacity duration-200 ${
+            hovered ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          <h3 className="text-sm font-bold text-white leading-tight line-clamp-2 mb-1">
+            {title}
+          </h3>
+          {game.developer && (
+            <p className="text-xs text-gray-300 mb-1 truncate">{game.developer}</p>
+          )}
+          {game.synopsis && (
+            <p className="text-xs text-gray-400 leading-relaxed line-clamp-3 mb-2">
+              {truncate(game.synopsis, 120)}
+            </p>
+          )}
+          {/* Play button on hover */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlay?.(game);
+            }}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-black hover:bg-gray-200 transition-colors shadow-lg"
+            aria-label={`Play ${title}`}
+          >
+            <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Title below poster (visible when not hovered) */}
+      <div className={`mt-2 transition-opacity duration-200 ${hovered ? 'opacity-0' : 'opacity-100'}`}>
+        <h3 className="text-xs font-medium text-gray-300 leading-tight line-clamp-2">
+          {title}
+        </h3>
+      </div>
+    </div>
+  );
+}

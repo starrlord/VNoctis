@@ -1,4 +1,4 @@
-import { enrichGame, enrichGameById } from '../services/enrichment.js';
+import { enrichGame, enrichGameById, enrichGameBySteamId } from '../services/enrichment.js';
 
 /**
  * Metadata refresh route plugin.
@@ -6,6 +6,8 @@ import { enrichGame, enrichGameById } from '../services/enrichment.js';
  * @param {import('fastify').FastifyInstance} fastify
  */
 export default async function metadataRoutes(fastify) {
+  // ── VNDB search ─────────────────────────────────────────
+
   /**
    * GET /metadata/vndb/search?q=<text>
    *
@@ -59,14 +61,75 @@ export default async function metadataRoutes(fastify) {
     }
   });
 
+  // ── Steam search ────────────────────────────────────────
+
+  /**
+   * GET /metadata/steam/search?q=<text>
+   *
+   * Searches the locally-cached Steam app list for games matching a name.
+   * Used by the MetadataEditModal autocomplete dropdown (Steam tab).
+   *
+   * Query params:
+   *   q  - Search text (minimum 3 characters)
+   *
+   * Returns an array of Steam app objects:
+   *   [{ appid, name, score }]
+   */
+  fastify.get('/metadata/steam/search', {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: '1 minute',
+      },
+    },
+  }, async (request, reply) => {
+    const q = (request.query.q || '').trim();
+
+    if (q.length < 3) {
+      return reply.code(400).send({
+        code: 'QUERY_TOO_SHORT',
+        message: 'Search query must be at least 3 characters.',
+      });
+    }
+
+    const steamClient = fastify.steamClient;
+
+    if (!steamClient) {
+      return reply.code(503).send({
+        code: 'STEAM_CLIENT_UNAVAILABLE',
+        message: 'Steam client is not configured.',
+      });
+    }
+
+    try {
+      const results = await steamClient.searchByName(q, 10);
+      return results;
+    } catch (err) {
+      request.log.error({ err: err.message, q }, 'Steam search failed');
+      return reply.code(500).send({
+        code: 'STEAM_SEARCH_ERROR',
+        message: err.message || 'Steam search failed.',
+      });
+    }
+  });
+
+  // ── Metadata refresh (VNDB + Steam) ─────────────────────
+
   /**
    * POST /metadata/:gameId/refresh
    *
-   * Re-fetches VNDB metadata for a game.
+   * Re-fetches metadata for a game from VNDB or Steam.
    *
-   * Optional body: { vndbId: "v12345" }
-   *   - If vndbId is provided, force-links the game to that VNDB entry.
-   *   - If omitted, searches VNDB by the game's extracted title.
+   * Optional body:
+   *   { vndbId: "v12345" }    - Force-link to a VNDB entry.
+   *   { steamAppId: "12345" } - Force-link to a Steam app.
+   *
+   * Smart source resolution when body is empty (e.g. "Refresh Metadata" button):
+   *   1. body.steamAppId → enrich from Steam
+   *   2. body.vndbId     → enrich from VNDB
+   *   3. game.steamAppId → re-fetch from Steam
+   *   4. game.vndbId     → re-fetch from VNDB
+   *   5. none            → search VNDB by extracted title (legacy fallback)
    *
    * Returns the updated game object.
    */
@@ -93,47 +156,108 @@ export default async function metadataRoutes(fastify) {
     }
 
     const vndbClient = fastify.vndbClient;
+    const steamClient = fastify.steamClient;
     const coversPath = fastify.coversPath;
     const screenshotsPath = fastify.screenshotsPath;
-
-    if (!vndbClient) {
-      return reply.code(503).send({
-        code: 'VNDB_CLIENT_UNAVAILABLE',
-        message: 'VNDB client is not configured.',
-      });
-    }
 
     try {
       const body = request.body || {};
       let updated;
 
-      // Determine the VNDB ID to use: explicit body override, or existing game vndbId
-      const vndbId = body.vndbId || game.vndbId;
+      // ── Priority 1: explicit steamAppId in body ────────
+      if (body.steamAppId) {
+        // Validate: must be numeric string
+        if (!/^\d+$/.test(String(body.steamAppId))) {
+          return reply.code(400).send({
+            code: 'INVALID_STEAM_APP_ID',
+            message: 'steamAppId must be a numeric value.',
+          });
+        }
 
-      if (vndbId) {
-        // Refresh by VNDB ID (bypasses the 'manual' metadataSource guard,
-        // so explicit user-initiated refreshes always work even after edits)
-        updated = await enrichGameById(
-          vndbId,
+        if (!steamClient) {
+          return reply.code(503).send({
+            code: 'STEAM_CLIENT_UNAVAILABLE',
+            message: 'Steam client is not configured.',
+          });
+        }
+
+        updated = await enrichGameBySteamId(
+          body.steamAppId,
           game,
           fastify.prisma,
-          vndbClient,
+          steamClient,
           coversPath,
           screenshotsPath,
           request.log
         );
-      } else {
-        // No VNDB ID — search by extracted title
-        updated = await enrichGame(
-          game,
-          fastify.prisma,
-          vndbClient,
-          coversPath,
-          screenshotsPath,
-          request.log
-        );
+        return updated;
       }
 
+      // ── Priority 2: explicit vndbId in body ────────────
+      if (body.vndbId) {
+        if (!vndbClient) {
+          return reply.code(503).send({
+            code: 'VNDB_CLIENT_UNAVAILABLE',
+            message: 'VNDB client is not configured.',
+          });
+        }
+
+        updated = await enrichGameById(
+          body.vndbId,
+          game,
+          fastify.prisma,
+          vndbClient,
+          coversPath,
+          screenshotsPath,
+          request.log
+        );
+        return updated;
+      }
+
+      // ── Priority 3: no body — smart source resolution ──
+      // Check stored steamAppId first, then vndbId
+      if (game.steamAppId && steamClient) {
+        updated = await enrichGameBySteamId(
+          game.steamAppId,
+          game,
+          fastify.prisma,
+          steamClient,
+          coversPath,
+          screenshotsPath,
+          request.log
+        );
+        return updated;
+      }
+
+      if (game.vndbId && vndbClient) {
+        updated = await enrichGameById(
+          game.vndbId,
+          game,
+          fastify.prisma,
+          vndbClient,
+          coversPath,
+          screenshotsPath,
+          request.log
+        );
+        return updated;
+      }
+
+      // ── Priority 4: no IDs stored — search VNDB by title
+      if (!vndbClient) {
+        return reply.code(503).send({
+          code: 'VNDB_CLIENT_UNAVAILABLE',
+          message: 'VNDB client is not configured.',
+        });
+      }
+
+      updated = await enrichGame(
+        game,
+        fastify.prisma,
+        vndbClient,
+        coversPath,
+        screenshotsPath,
+        request.log
+      );
       return updated;
     } catch (err) {
       request.log.error({ err: err.message, gameId }, 'Metadata refresh failed');
