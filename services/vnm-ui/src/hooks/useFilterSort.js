@@ -185,6 +185,8 @@ export default function useFilterSort(games) {
             return !game.buildStatus || game.buildStatus === 'not_built';
           case 'building':
             return game.buildStatus === 'building' || game.buildStatus === 'queued';
+          case 'queued':
+            return game.buildStatus === 'queued';
           case 'failed':
             return game.buildStatus === 'failed';
           default:

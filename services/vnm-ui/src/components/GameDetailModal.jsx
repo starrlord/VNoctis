@@ -474,7 +474,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                         </button>
                         <button
                           onClick={() => handleRemoveTag(tag)}
-                          className="hidden group-hover/tag:inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                          className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 opacity-0 group-hover/tag:opacity-100 transition-all"
                           aria-label={`Remove tag ${tag.name}`}
                         >
                           ✕
@@ -504,7 +504,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                           </button>
                           <button
                             onClick={() => handleRemoveTag(tag)}
-                            className="hidden group-hover/tag:inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-yellow-400/60 hover:text-red-400 hover:bg-red-900/30 transition-colors"
+                            className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-yellow-400/60 hover:text-red-400 hover:bg-red-900/30 opacity-0 group-hover/tag:opacity-100 transition-all"
                             aria-label={`Remove tag ${tag.name}`}
                           >
                             ✕
