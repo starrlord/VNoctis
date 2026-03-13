@@ -16,6 +16,13 @@ html, body {
    -webkit-fill-available is the older Safari fallback. */
 html {
   height: -webkit-fill-available;
+  background-color: #f9fafb; /* gray-50 — light mode default */
+}
+
+/* Ensure the safe-area backdrop matches the app background in dark mode
+   so the iOS home-indicator / safe-area region isn't white. */
+html.dark {
+  background-color: #111827; /* gray-900 — matches dark mode */
 }
 
 /* Safe-area padding is applied per-page rather than on <body> so the
@@ -23,6 +30,7 @@ html {
 body {
   min-height: 100dvh;
   min-height: -webkit-fill-available;
+  background-color: inherit;
 }
 
 /* Apply safe-area insets to non-player pages (Library, Login, etc.) */

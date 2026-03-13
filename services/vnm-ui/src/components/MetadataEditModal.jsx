@@ -425,11 +425,11 @@ export default function MetadataEditModal({ game, onClose, onSaved }) {
       <div
         ref={modalRef}
         tabIndex={-1}
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700/50 motion-safe:animate-scale-in outline-none"
+        className="relative w-full max-w-2xl modal-max-h flex flex-col bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700/50 motion-safe:animate-scale-in outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+        {/* Header — pinned at top */}
+        <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">✏️ Edit Metadata</h2>
           <button
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-800/80 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-600 dark:text-white text-lg transition-colors"
@@ -440,8 +440,8 @@ export default function MetadataEditModal({ game, onClose, onSaved }) {
           </button>
         </div>
 
-        {/* Form */}
-        <div className="px-6 py-4 space-y-4">
+        {/* Form — only this section scrolls */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Title */}
           <div>
             <label className={labelClass('vndbTitle')}>Title</label>
@@ -768,15 +768,15 @@ export default function MetadataEditModal({ game, onClose, onSaved }) {
 
         {/* Error message */}
         {error && (
-          <div className="px-6 pb-2">
+          <div className="flex-shrink-0 px-6 pb-2">
             <p className="text-sm text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
               ⚠️ {error}
             </p>
           </div>
         )}
 
-        {/* Footer buttons */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800">
+        {/* Footer buttons — pinned at bottom */}
+        <div className="flex-shrink-0 flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800">
           <button
             onClick={onClose}
             className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors text-sm"
