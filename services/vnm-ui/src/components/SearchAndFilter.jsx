@@ -224,8 +224,8 @@ export default function SearchAndFilter({
  */
 function FilterGroup({ label, children }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{label}:</span>
+    <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-1.5 border border-gray-200/50 dark:border-gray-700/30">
+      <span className="text-xs text-gray-400 dark:text-gray-500 font-medium whitespace-nowrap">{label}:</span>
       <div className="flex gap-1">
         {children}
       </div>

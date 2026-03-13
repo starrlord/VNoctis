@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import GameCard from '../components/GameCard';
 import SkeletonCard from '../components/SkeletonCard';
 import GameDetailModal from '../components/GameDetailModal';
@@ -52,6 +52,23 @@ export default function Library() {
     setShowHidden,
     hiddenCount,
   } = useFilterSort(games);
+
+  // Compute status counts from all games (unfiltered)
+  const unmatchedCount = useMemo(() => games.filter((g) => g.metadataSource === 'unmatched').length, [games]);
+  const buildingCount = useMemo(() => games.filter((g) => g.buildStatus === 'building').length, [games]);
+  const queuedCount = useMemo(() => games.filter((g) => g.buildStatus === 'queued').length, [games]);
+
+  // Status pill click → set the appropriate filter
+  const handleStatusClick = useCallback((status) => {
+    clearFilters();
+    if (status === 'unmatched') {
+      setMetadataFilter('unmatched');
+    } else if (status === 'building') {
+      setBuildStatusFilter('building');
+    } else if (status === 'queued') {
+      setBuildStatusFilter('queued');
+    }
+  }, [clearFilters, setMetadataFilter, setBuildStatusFilter]);
 
   const handleCardClick = (game) => {
     setSelectedGameId(game.id);
@@ -172,6 +189,10 @@ export default function Library() {
           hiddenCount={hiddenCount}
           showHidden={showHidden}
           onToggleShowHidden={() => setShowHidden(!showHidden)}
+          unmatchedCount={unmatchedCount}
+          buildingCount={buildingCount}
+          queuedCount={queuedCount}
+          onStatusClick={handleStatusClick}
         />
 
         <div className="flex items-center gap-2">
