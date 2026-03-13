@@ -23,7 +23,7 @@ export default function GalleryCard({ game, onClick, onPlay, size = 'normal' }) 
       : null;
   const gradient = generateGradient(title);
 
-  const widthClass = size === 'large' ? 'w-48 sm:w-56' : 'w-36 sm:w-44';
+  const widthClass = size === 'large' ? 'w-72 sm:w-80' : 'w-56 sm:w-72';
 
   return (
     <div
@@ -32,16 +32,26 @@ export default function GalleryCard({ game, onClick, onPlay, size = 'normal' }) 
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Poster image — 2:3 aspect ratio */}
-      <div className="relative aspect-[2/3] w-full rounded-md overflow-hidden shadow-lg shadow-black/40">
+      {/* Card image — 4:3 landscape with blur-fill background */}
+      <div className="relative aspect-[4/3] w-full rounded-md overflow-hidden shadow-lg shadow-black/40">
         {coverUrl ? (
-          <img
-            src={coverUrl}
-            alt={title}
-            loading="lazy"
-            className="absolute inset-0 w-full h-full object-cover"
-            onError={() => setImgError(true)}
-          />
+          <>
+            {/* Blurred background fill — prevents empty space for any aspect ratio */}
+            <img
+              src={coverUrl}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl brightness-[0.35]"
+            />
+            {/* Actual uncropped image — always fully visible */}
+            <img
+              src={coverUrl}
+              alt={title}
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-contain drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
+              onError={() => setImgError(true)}
+            />
+          </>
         ) : (
           <div
             className="absolute inset-0"

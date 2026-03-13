@@ -119,7 +119,7 @@ export default function GalleryRow({ title, games, onCardClick, onPlay, onViewMo
             <div style={{ scrollSnapAlign: 'start' }}>
               <button
                 onClick={() => onViewMore(title, games)}
-                className="flex-shrink-0 w-36 sm:w-44 aspect-[2/3] rounded-md bg-gray-800/60 hover:bg-gray-700/80 border border-gray-700/50 hover:border-gray-600 flex flex-col items-center justify-center gap-3 transition-all duration-200 cursor-pointer group"
+                className="flex-shrink-0 w-56 sm:w-72 aspect-[4/3] rounded-md bg-gray-800/60 hover:bg-gray-700/80 border border-gray-700/50 hover:border-gray-600 flex flex-col items-center justify-center gap-3 transition-all duration-200 cursor-pointer group"
               >
                 <div className="w-12 h-12 rounded-full bg-gray-700 group-hover:bg-gray-600 flex items-center justify-center transition-colors">
                   <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">

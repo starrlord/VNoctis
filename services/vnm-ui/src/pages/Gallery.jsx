@@ -154,7 +154,7 @@ export default function Gallery() {
               : `No results for "${searchQuery}"`}
           </h2>
           {searchResults.length > 0 ? (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {searchResults.map((game) => (
                 <GalleryCard
                   key={game.id}
@@ -191,7 +191,7 @@ export default function Gallery() {
           </div>
 
           {/* Grid */}
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {categoryView.games.map((game) => (
               <GalleryCard
                 key={game.id}

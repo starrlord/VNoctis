@@ -27,15 +27,25 @@ export default function GameCard({ game, onClick, onHide }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Image area — 4:1 aspect ratio */}
+      {/* Image area — 16:9 aspect ratio with blur-fill background */}
       <div className="relative aspect-video w-full bg-gray-900">
         {coverUrl ? (
-          <img
-            src={coverUrl}
-            alt={title}
-            loading="lazy"
-            className="absolute inset-0 w-full h-full object-contain rounded-t-lg"
-          />
+          <>
+            {/* Blurred background fill — prevents empty space for any aspect ratio */}
+            <img
+              src={coverUrl}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl brightness-[0.35] rounded-t-lg"
+            />
+            {/* Actual uncropped image — always fully visible */}
+            <img
+              src={coverUrl}
+              alt={title}
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-contain drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] rounded-t-lg"
+            />
+          </>
         ) : (
           <div
             className="absolute inset-0 rounded-t-lg"
