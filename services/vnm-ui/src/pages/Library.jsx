@@ -177,8 +177,8 @@ export default function Library() {
       />
 
       {/* Sort bar with count + scan button */}
-      <div className="flex items-center justify-between">
-        <SortBar
+      <div className="flex items-start justify-between gap-4">
+        <SortBar className="flex-1 min-w-0"
           filteredCount={filteredGames.length}
           totalCount={games.length}
           sortBy={sortBy}
@@ -195,7 +195,7 @@ export default function Library() {
           onStatusClick={handleStatusClick}
         />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {showHidden && hiddenCount > 0 && (
             <button
               onClick={handleUnhideAll}
