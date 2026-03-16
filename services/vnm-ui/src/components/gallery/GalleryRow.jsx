@@ -16,10 +16,11 @@ const MAX_ROW_ITEMS = 12;
  *   games: Array,
  *   onCardClick: (game: object) => void,
  *   onPlay: (game: object) => void,
+ *   onFavorite?: (gameId: string) => void,
  *   onViewMore?: (title: string, games: Array) => void,
  * }} props
  */
-export default function GalleryRow({ title, games, onCardClick, onPlay, onViewMore }) {
+export default function GalleryRow({ title, games, onCardClick, onPlay, onFavorite, onViewMore }) {
   const scrollRef = useRef(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -110,6 +111,7 @@ export default function GalleryRow({ title, games, onCardClick, onPlay, onViewMo
                 game={game}
                 onClick={onCardClick}
                 onPlay={onPlay}
+                onFavorite={onFavorite}
               />
             </div>
           ))}

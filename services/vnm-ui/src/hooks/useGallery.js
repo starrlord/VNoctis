@@ -25,6 +25,7 @@ const MAX_TAG_ROWS = 8;
  *   searchQuery: string,
  *   setSearchQuery: (q: string) => void,
  *   searchResults: Array,
+ *   toggleFavorite: (gameId: string) => Promise<void>,
  * }}
  */
 export default function useGallery() {
@@ -45,6 +46,25 @@ export default function useGallery() {
       setLoading(false);
     }
   }, []);
+
+  // Toggle favorite on a game — optimistic update + API call
+  const toggleFavorite = useCallback(async (gameId) => {
+    const game = games.find((g) => g.id === gameId);
+    if (!game) return;
+    const newFav = !game.favorite;
+    // Optimistic update
+    setGames((prev) =>
+      prev.map((g) => (g.id === gameId ? { ...g, favorite: newFav } : g))
+    );
+    try {
+      await api.patch(`/library/${gameId}`, { favorite: newFav });
+    } catch {
+      // Revert on failure
+      setGames((prev) =>
+        prev.map((g) => (g.id === gameId ? { ...g, favorite: !newFav } : g))
+      );
+    }
+  }, [games]);
 
   useEffect(() => {
     fetchGames();
@@ -76,7 +96,13 @@ export default function useGallery() {
       result.push({ title: 'Recently Added', games: recentlyAdded });
     }
 
-    // 2. Top Rated — rating ≥ 7, sorted desc
+    // 2. My Favorites — user-curated list
+    const favorites = games.filter((g) => g.favorite);
+    if (favorites.length > 0) {
+      result.push({ title: '❤️ My Favorites', games: favorites });
+    }
+
+    // 3. Top Rated — rating ≥ 7, sorted desc
     const topRated = [...games]
       .filter((g) => g.vndbRating != null && g.vndbRating >= 7)
       .sort((a, b) => b.vndbRating - a.vndbRating);
@@ -149,6 +175,7 @@ export default function useGallery() {
     searchQuery,
     setSearchQuery,
     searchResults,
+    toggleFavorite,
   };
 }
 

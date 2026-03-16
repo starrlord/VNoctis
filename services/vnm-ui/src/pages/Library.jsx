@@ -14,7 +14,7 @@ import useLibrary from '../hooks/useLibrary';
  * Owns its own data via useLibrary (fetches games, handles scanning).
  */
 export default function Library() {
-  const { games, loading, error, refetch, scanning, triggerScan, hideGame, unhideAll } = useLibrary();
+  const { games, loading, error, refetch, scanning, triggerScan, hideGame, unhideAll, favoriteGame } = useLibrary();
   const [selectedGameId, setSelectedGameId] = useState(null);
 
   // Listen for external refresh events (e.g., after game import from Navbar modal)
@@ -51,6 +51,9 @@ export default function Library() {
     showHidden,
     setShowHidden,
     hiddenCount,
+    showFavorites,
+    setShowFavorites,
+    favoriteCount,
   } = useFilterSort(games);
 
   // Compute status counts from all games (unfiltered)
@@ -72,6 +75,10 @@ export default function Library() {
 
   const handleCardClick = (game) => {
     setSelectedGameId(game.id);
+  };
+
+  const handleFavorite = (game) => {
+    favoriteGame(game.id, !game.favorite);
   };
 
   const handleHide = (game) => {
@@ -189,6 +196,9 @@ export default function Library() {
           hiddenCount={hiddenCount}
           showHidden={showHidden}
           onToggleShowHidden={() => setShowHidden(!showHidden)}
+          favoriteCount={favoriteCount}
+          showFavorites={showFavorites}
+          onToggleShowFavorites={() => setShowFavorites(!showFavorites)}
           unmatchedCount={unmatchedCount}
           buildingCount={buildingCount}
           queuedCount={queuedCount}
@@ -240,7 +250,7 @@ export default function Library() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedGames.map((game) => (
-              <GameCard key={game.id} game={game} onClick={handleCardClick} onHide={handleHide} />
+              <GameCard key={game.id} game={game} onClick={handleCardClick} onHide={handleHide} onFavorite={handleFavorite} />
             ))}
           </div>
 
@@ -282,6 +292,7 @@ export default function Library() {
           refetch();
         }}
         onHide={handleHide}
+        onFavorite={handleFavorite}
         onTagClick={(tagName) => {
           clearFilters();
           toggleTag(tagName);

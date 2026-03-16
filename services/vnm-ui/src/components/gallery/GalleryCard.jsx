@@ -9,10 +9,11 @@ import { generateGradient, formatRating, getRatingColor, truncate } from '../../
  *   game: object,
  *   onClick: (game: object) => void,
  *   onPlay?: (game: object) => void,
+ *   onFavorite?: (gameId: string) => void,
  *   size?: 'normal' | 'large',
  * }} props
  */
-export default function GalleryCard({ game, onClick, onPlay, size = 'normal' }) {
+export default function GalleryCard({ game, onClick, onPlay, onFavorite, size = 'normal' }) {
   const [hovered, setHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -27,7 +28,7 @@ export default function GalleryCard({ game, onClick, onPlay, size = 'normal' }) 
 
   return (
     <div
-      className={`gallery-card-hover relative flex-shrink-0 ${widthClass} cursor-pointer select-none`}
+      className={`gallery-card-hover relative flex-shrink-0 ${widthClass} cursor-pointer select-none group`}
       onClick={() => onClick?.(game)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -63,6 +64,26 @@ export default function GalleryCard({ game, onClick, onPlay, size = 'normal' }) 
               </span>
             </div>
           </div>
+        )}
+
+        {/* Favorite heart — top-left */}
+        {onFavorite && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onFavorite(game.id);
+            }}
+            className={`absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full backdrop-blur-sm transition-all duration-200 ${
+              game.favorite
+                ? 'bg-red-500/40 text-red-400 hover:bg-red-500/60 hover:text-red-300 opacity-100'
+                : 'bg-black/40 text-white/70 hover:bg-black/60 hover:text-red-400 opacity-0 group-hover:opacity-100'
+            }`}
+            title={game.favorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <svg className="w-4 h-4" fill={game.favorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+            </svg>
+          </button>
         )}
 
         {/* Rating badge — top-right */}

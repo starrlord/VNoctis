@@ -5,9 +5,9 @@ import { generateGradient, formatRating, getRatingColor, truncate } from '../lib
  * Individual game card for the library grid.
  * Landscape layout with a 4:1 banner image on top and info section below.
  *
- * @param {{ game: object, onClick: (game: object) => void, onHide?: (game: object) => void }} props
+ * @param {{ game: object, onClick: (game: object) => void, onHide?: (game: object) => void, onFavorite?: (game: object) => void }} props
  */
-export default function GameCard({ game, onClick, onHide }) {
+export default function GameCard({ game, onClick, onHide, onFavorite }) {
   const [hovered, setHovered] = useState(false);
 
   const title = game.vndbTitle || game.extractedTitle || 'Unknown';
@@ -69,8 +69,28 @@ export default function GameCard({ game, onClick, onHide }) {
           </div>
         )}
 
-        {/* Status overlays — top-left of image area */}
-        <div className="absolute top-2 left-2 flex flex-col gap-1">
+        {/* Favorite heart — top-left of image area */}
+        {onFavorite && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onFavorite(game);
+            }}
+            className={`absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full backdrop-blur-sm transition-all duration-200 ${
+              game.favorite
+                ? 'bg-red-500/30 text-red-400 hover:bg-red-500/50 hover:text-red-300 opacity-100'
+                : 'bg-black/40 text-white/70 hover:bg-black/60 hover:text-red-400 opacity-0 group-hover:opacity-100'
+            }`}
+            title={game.favorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <svg className="w-4 h-4" fill={game.favorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Status overlays — below favorite heart in top-left of image area */}
+        <div className="absolute top-2 left-11 flex flex-col gap-1">
           {game.metadataSource === 'unmatched' && (
             <span className="px-2 py-0.5 rounded text-xs font-semibold bg-orange-600 text-white shadow">
               Unmatched

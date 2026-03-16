@@ -26,6 +26,7 @@ model Game {
   screenshots       String   @default("[]")          // JSON array of screenshot URLs
   buildStatus       String   @default("not_built")   // not_built|queued|building|built|failed|stale
   hidden            Boolean  @default(false)          // User-hidden from library view
+  favorite          Boolean  @default(false)          // User-favorited game
   buildJobId        String?                          // Most recent build job ID
   builtAt           DateTime?                        // Last successful build time
   webBuildPath      String?                          // URL to compiled web export

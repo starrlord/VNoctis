@@ -13,6 +13,7 @@ import api from './useApi';
  *   triggerScan: () => Promise<void>,
  *   hideGame: (gameId: string, hidden?: boolean) => Promise<void>,
  *   unhideAll: () => Promise<void>,
+ *   favoriteGame: (gameId: string, favorite?: boolean) => Promise<void>,
  * }}
  */
 export default function useLibrary() {
@@ -78,6 +79,19 @@ export default function useLibrary() {
     }
   }, [fetchGames]);
 
+  const favoriteGame = useCallback(async (gameId, favorite = true) => {
+    try {
+      await api.patch(`/library/${gameId}`, { favorite });
+      // Optimistically update local state
+      setGames((prev) =>
+        prev.map((g) => (g.id === gameId ? { ...g, favorite } : g))
+      );
+    } catch (err) {
+      // Revert on error — refetch
+      await fetchGames();
+    }
+  }, [fetchGames]);
+
   return {
     games,
     loading,
@@ -87,5 +101,6 @@ export default function useLibrary() {
     triggerScan,
     hideGame,
     unhideAll,
+    favoriteGame,
   };
 }

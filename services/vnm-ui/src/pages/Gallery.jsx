@@ -29,6 +29,7 @@ export default function Gallery() {
     searchQuery,
     setSearchQuery,
     searchResults,
+    toggleFavorite,
   } = useGallery();
 
   const [selectedGameId, setSelectedGameId] = useState(null);
@@ -161,6 +162,7 @@ export default function Gallery() {
                   game={game}
                   onClick={handleCardClick}
                   onPlay={handlePlay}
+                  onFavorite={toggleFavorite}
                 />
               ))}
             </div>
@@ -198,6 +200,7 @@ export default function Gallery() {
                 game={game}
                 onClick={handleCardClick}
                 onPlay={handlePlay}
+                onFavorite={toggleFavorite}
               />
             ))}
           </div>
@@ -221,6 +224,7 @@ export default function Gallery() {
                 games={row.games}
                 onCardClick={handleCardClick}
                 onPlay={handlePlay}
+                onFavorite={toggleFavorite}
                 onViewMore={handleViewMore}
               />
             ))}
@@ -234,6 +238,7 @@ export default function Gallery() {
           gameId={selectedGameId}
           onClose={handleModalClose}
           onTagClick={handleTagClick}
+          onFavorite={toggleFavorite}
         />
       )}
     </div>

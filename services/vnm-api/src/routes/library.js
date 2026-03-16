@@ -254,6 +254,7 @@ export default async function libraryRoutes(fastify) {
       'tags',
       'screenshots',
       'hidden',
+      'favorite',
     ];
 
     const updateData = {};
@@ -309,8 +310,8 @@ export default async function libraryRoutes(fastify) {
       }
     }
 
-    // Mark as manually edited (but not for hide-only toggles)
-    const nonHiddenFields = Object.keys(updateData).filter(k => k !== 'hidden');
+    // Mark as manually edited (but not for hide/favorite-only toggles)
+    const nonHiddenFields = Object.keys(updateData).filter(k => k !== 'hidden' && k !== 'favorite');
     if (nonHiddenFields.length > 0) {
       updateData.metadataSource = 'manual';
     }

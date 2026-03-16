@@ -12,13 +12,16 @@
  *   hiddenCount: number,
  *   showHidden: boolean,
  *   onToggleShowHidden: () => void,
+ *   favoriteCount?: number,
+ *   showFavorites?: boolean,
+ *   onToggleShowFavorites?: () => void,
  *   unmatchedCount?: number,
  *   buildingCount?: number,
  *   queuedCount?: number,
  *   onStatusClick?: (status: string) => void,
  * }} props
  */
-export default function SortBar({ filteredCount, totalCount, sortBy, onSortChange, currentPage, pageSize, showAll, hiddenCount, showHidden, onToggleShowHidden, unmatchedCount = 0, buildingCount = 0, queuedCount = 0, onStatusClick, className = '' }) {
+export default function SortBar({ filteredCount, totalCount, sortBy, onSortChange, currentPage, pageSize, showAll, hiddenCount, showHidden, onToggleShowHidden, favoriteCount = 0, showFavorites = false, onToggleShowFavorites, unmatchedCount = 0, buildingCount = 0, queuedCount = 0, onStatusClick, className = '' }) {
   const sortOptions = [
     { value: 'title-asc', label: 'Title (A–Z)' },
     { value: 'title-desc', label: 'Title (Z–A)' },
@@ -32,7 +35,7 @@ export default function SortBar({ filteredCount, totalCount, sortBy, onSortChang
     { value: 'built-asc', label: 'Last Build (Oldest)' },
   ];
 
-  const hasStatusPills = hiddenCount > 0 || unmatchedCount > 0 || buildingCount > 0 || queuedCount > 0;
+  const hasStatusPills = favoriteCount > 0 || hiddenCount > 0 || unmatchedCount > 0 || buildingCount > 0 || queuedCount > 0;
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -102,6 +105,24 @@ export default function SortBar({ filteredCount, totalCount, sortBy, onSortChang
       {/* Status pills row — only rendered when there are pills to show */}
       {hasStatusPills && (
         <div className="flex flex-wrap items-center gap-1.5">
+          {/* Favorites count pill */}
+          {favoriteCount > 0 && (
+            <button
+              onClick={onToggleShowFavorites}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
+                showFavorites
+                  ? 'bg-red-500/20 text-red-400 ring-1 ring-red-500/30'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+              title={showFavorites ? 'Show all games' : 'Show favorites only'}
+            >
+              <svg className="w-3.5 h-3.5" fill={showFavorites ? 'currentColor' : 'none'} viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+              </svg>
+              {favoriteCount} favorite{favoriteCount !== 1 ? 's' : ''}
+            </button>
+          )}
+
           {/* Hidden count pill */}
           {hiddenCount > 0 && (
             <button

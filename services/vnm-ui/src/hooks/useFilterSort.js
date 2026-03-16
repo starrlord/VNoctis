@@ -53,6 +53,9 @@ function loadSavedFilters() {
  *   showHidden: boolean,
  *   setShowHidden: (show: boolean) => void,
  *   hiddenCount: number,
+ *   showFavorites: boolean,
+ *   setShowFavorites: (show: boolean) => void,
+ *   favoriteCount: number,
  * }}
  */
 export default function useFilterSort(games) {
@@ -72,6 +75,7 @@ export default function useFilterSort(games) {
   }, []);
   const [showAll, setShowAll] = useState(saved.showAll ?? false);
   const [showHidden, setShowHidden] = useState(saved.showHidden ?? false);
+  const [showFavorites, setShowFavorites] = useState(saved.showFavorites ?? false);
 
   // Persist all filter/sort state to sessionStorage so it survives
   // navigation to the Player page and back.
@@ -87,15 +91,21 @@ export default function useFilterSort(games) {
         currentPage,
         showAll,
         showHidden,
+        showFavorites,
       }));
     } catch {
       // sessionStorage may be unavailable; degrade gracefully
     }
-  }, [searchQuery, ratingFilter, buildStatusFilter, metadataFilter, selectedTags, sortBy, currentPage, showAll, showHidden]);
+  }, [searchQuery, ratingFilter, buildStatusFilter, metadataFilter, selectedTags, sortBy, currentPage, showAll, showHidden, showFavorites]);
 
   // Compute count of hidden games (across unfiltered list)
   const hiddenCount = useMemo(() => {
     return games.filter((g) => g.hidden).length;
+  }, [games]);
+
+  // Compute count of favorited games (across unfiltered list)
+  const favoriteCount = useMemo(() => {
+    return games.filter((g) => g.favorite).length;
   }, [games]);
 
   // Compute top tags across all games (by frequency)
@@ -141,6 +151,7 @@ export default function useFilterSort(games) {
     setBuildStatusFilter('all');
     setMetadataFilter('all');
     setSelectedTags(new Set());
+    setShowFavorites(false);
     setCurrentPage(1);
   }, []);
 
@@ -148,9 +159,14 @@ export default function useFilterSort(games) {
   const filteredGames = useMemo(() => {
     let result = games;
 
-    // 0. Hidden filter — exclude hidden games unless showHidden is active
+    // 0a. Hidden filter — exclude hidden games unless showHidden is active
     if (!showHidden) {
       result = result.filter((game) => !game.hidden);
+    }
+
+    // 0b. Favorites filter — show only favorited games when active
+    if (showFavorites) {
+      result = result.filter((game) => game.favorite);
     }
 
     // 1. Search filter — case-insensitive match against both titles
@@ -279,7 +295,7 @@ export default function useFilterSort(games) {
     });
 
     return result;
-  }, [games, searchQuery, ratingFilter, buildStatusFilter, metadataFilter, selectedTags, sortBy, showHidden]);
+  }, [games, searchQuery, ratingFilter, buildStatusFilter, metadataFilter, selectedTags, sortBy, showHidden, showFavorites]);
 
   // Reset to page 1 when filters, search, or sort change (skip initial mount
   // so the page restored from sessionStorage isn't immediately overwritten).
@@ -290,7 +306,7 @@ export default function useFilterSort(games) {
       return;
     }
     setCurrentPage(1);
-  }, [searchQuery, ratingFilter, buildStatusFilter, metadataFilter, selectedTags, sortBy]);
+  }, [searchQuery, ratingFilter, buildStatusFilter, metadataFilter, selectedTags, sortBy, showFavorites]);
 
   // Pagination derived values
   const totalPages = showAll ? 1 : Math.max(1, Math.ceil(filteredGames.length / PAGE_SIZE));
@@ -331,5 +347,8 @@ export default function useFilterSort(games) {
     showHidden,
     setShowHidden,
     hiddenCount,
+    showFavorites,
+    setShowFavorites,
+    favoriteCount,
   };
 }

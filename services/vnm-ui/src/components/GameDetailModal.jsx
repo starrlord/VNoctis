@@ -17,9 +17,9 @@ import {
  * Full-screen modal overlay showing complete game details.
  * Fetches fresh game data on open and provides action buttons.
  *
- * @param {{ gameId: string, onClose: () => void, onDeleted?: () => void, onHide?: (game: object) => void, onTagClick?: (tagName: string) => void }} props
+ * @param {{ gameId: string, onClose: () => void, onDeleted?: () => void, onHide?: (game: object) => void, onFavorite?: (game: object) => void, onTagClick?: (tagName: string) => void }} props
  */
-export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, onTagClick }) {
+export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, onFavorite, onTagClick }) {
   const navigate = useNavigate();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -402,6 +402,22 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                   >
                     ✏️ Edit
                   </button>
+                  {/* Favorite toggle */}
+                  {onFavorite && (
+                    <button
+                      onClick={() => {
+                        setGame((prev) => prev ? { ...prev, favorite: !prev.favorite } : prev);
+                        onFavorite(game);
+                      }}
+                      className={`px-4 py-2.5 font-medium rounded-lg transition-colors duration-200 text-sm ${
+                        game.favorite
+                          ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 ring-1 ring-red-500/30'
+                          : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white'
+                      }`}
+                    >
+                      {game.favorite ? '❤️ Favorited' : '🤍 Favorite'}
+                    </button>
+                  )}
                   {/* Hide/Unhide toggle */}
                   {onHide && (
                     <button

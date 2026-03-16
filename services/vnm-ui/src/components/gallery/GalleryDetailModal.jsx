@@ -12,16 +12,17 @@ import {
 
 /**
  * Read-only game detail modal for the gallery.
- * Shows game information, screenshots, and a Play button — no admin actions.
+ * Shows game information, screenshots, a Play button, and a favorite toggle.
  *
  * @param {{
  *   gameId: string,
  *   onClose: () => void,
  *   galleryPlayPath?: string,
  *   onTagClick?: (tagName: string) => void,
+ *   onFavorite?: (gameId: string) => void,
  * }} props
  */
-export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, onTagClick }) {
+export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, onTagClick, onFavorite }) {
   const navigate = useNavigate();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -219,7 +220,7 @@ export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, o
                   )}
                 </div>
 
-                {/* Action buttons — Play only + VNDB link */}
+                {/* Action buttons — Play, Favorite, + VNDB link */}
                 <div className="flex flex-wrap gap-3 mb-6">
                   <button
                     onClick={handlePlay}
@@ -230,6 +231,24 @@ export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, o
                     </svg>
                     Play
                   </button>
+                  {onFavorite && (
+                    <button
+                      onClick={() => {
+                        setGame((prev) => prev ? { ...prev, favorite: !prev.favorite } : prev);
+                        onFavorite(gameId);
+                      }}
+                      className={`flex items-center gap-2 px-4 py-2.5 font-medium rounded-md text-sm transition-colors ${
+                        game.favorite
+                          ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 ring-1 ring-red-500/30'
+                          : 'bg-gray-700 hover:bg-gray-600 text-white'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill={game.favorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+                      </svg>
+                      {game.favorite ? 'Favorited' : 'Favorite'}
+                    </button>
+                  )}
                   {game.vndbId && (
                     <a
                       href={`https://vndb.org/${game.vndbId}`}
