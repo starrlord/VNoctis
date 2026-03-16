@@ -3,13 +3,19 @@ import { useNavigate, useLocation } from 'react-router-dom';
 /**
  * Compact top-bar chrome displayed over the game iframe.
  *
- * Contains a back-to-library button, centred game title, a volume
- * slider, and a fullscreen toggle.  In fullscreen the bar hides
- * completely; hovering / touching near the top edge reveals it
+ * On non-iOS devices: renders a full bar with back button, centred game
+ * title, volume slider, and fullscreen toggle.  In fullscreen the bar
+ * hides completely; hovering / touching near the top edge reveals it
  * temporarily (controlled by the parent via `visible` prop).
+ *
+ * On iOS (iPhone / iPad): renders a minimal floating pill showing only
+ * "← Library" (or "← Gallery") to maximise gameplay viewport.  The pill
+ * auto-fades after a few seconds and reappears via a touch-reveal zone
+ * managed by the parent Player component.
  *
  * @param {{
  *   title: string,
+ *   isIOS?: boolean,
  *   isFullscreen: boolean,
  *   visible: boolean,
  *   volume: number,
@@ -20,6 +26,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
  */
 export default function PlayerChrome({
   title,
+  isIOS = false,
   isFullscreen,
   visible,
   volume,
@@ -32,6 +39,54 @@ export default function PlayerChrome({
   const isGalleryPlayer = location.pathname.startsWith('/gallery/play/');
   const backPath = isGalleryPlayer ? '/gallery' : '/';
   const backLabel = isGalleryPlayer ? 'Gallery' : 'Library';
+
+  // ------------------------------------------------------------------
+  // iOS: minimal floating pill — just "← Library" / "← Gallery"
+  // Saves ~48px of vertical space that the full bar would consume.
+  // Positioned with safe-area offsets to avoid the notch / Dynamic Island.
+  // Uses pointer-events-none when hidden so taps fall through to the
+  // game iframe (the parent provides an invisible touch-reveal zone).
+  // ------------------------------------------------------------------
+  if (isIOS) {
+    return (
+      <button
+        onClick={() => navigate(backPath)}
+        className={`
+          fixed z-50
+          top-[max(0.5rem,env(safe-area-inset-top))]
+          left-[max(0.5rem,env(safe-area-inset-left))]
+          flex items-center gap-1.5
+          px-3.5 py-2 min-h-[44px]
+          bg-gray-900/60 backdrop-blur-sm
+          text-gray-200 text-sm font-medium
+          rounded-full shadow-lg
+          transition-opacity duration-500
+          ${visible ? 'opacity-90' : 'opacity-0 pointer-events-none'}
+        `}
+        aria-label={`Back to ${backLabel.toLowerCase()}`}
+      >
+        {/* ← arrow */}
+        <svg
+          className="w-4 h-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"
+          />
+        </svg>
+        {backLabel}
+      </button>
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Non-iOS: full chrome bar with title, volume, fullscreen toggle
+  // ------------------------------------------------------------------
 
   // In fullscreen the bar slides in/out based on `visible`
   const barClasses = isFullscreen

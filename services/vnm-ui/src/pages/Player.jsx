@@ -151,12 +151,16 @@ export default function Player() {
   }, [isIOS, setChromeVisible]);
 
   // ------------------------------------------------------------------
-  // Auto-hide chrome bar in desktop fullscreen only.
+  // Auto-hide chrome bar.
   //
-  // Previously this also hid the bar on iOS to maximise vertical
-  // space, but iframe touch events never bubble to the parent window
-  // so the reveal-on-swipe mechanism was unreachable.  Keeping the
-  // bar always visible on iOS is the safer UX.
+  // Desktop: hides in fullscreen only; mousemove near top edge reveals.
+  //
+  // iOS: the PlayerChrome renders as a minimal floating pill instead
+  // of a full bar.  We auto-fade it after 3 seconds to maximise the
+  // gameplay viewport.  Because iframe touch events never bubble to
+  // the parent window, an invisible touch-reveal zone (<div>) is
+  // rendered above the iframe in the top-left corner (see JSX below)
+  // so the user can tap to re-show the pill.
   //
   // Touch zone expanded to 44px (Apple HIG minimum) and includes
   // touchstart for tap detection (touchmove alone misses quick taps).
@@ -164,7 +168,7 @@ export default function Player() {
   // All listeners use { passive: true } so iOS Safari's compositor
   // thread is never blocked waiting for a potential preventDefault().
   // ------------------------------------------------------------------
-  const shouldAutoHideChrome = isFullscreen;
+  const shouldAutoHideChrome = isFullscreen || isIOS;
 
   useEffect(() => {
     if (!shouldAutoHideChrome) {
@@ -233,16 +237,38 @@ export default function Player() {
       ref={containerRef}
       className="fixed inset-0 bg-black flex flex-col z-50 pb-[env(safe-area-inset-bottom)]"
     >
-      {/* Chrome top bar — auto-hides on iOS, hide fullscreen button on iOS */}
+      {/* Chrome bar — full bar on desktop, floating pill on iOS */}
       <PlayerChrome
         title={title}
-        isFullscreen={isFullscreen || (isIOS && shouldAutoHideChrome)}
+        isIOS={isIOS}
+        isFullscreen={isFullscreen}
         visible={chromeVisible}
         volume={volume}
         onVolumeChange={setVolume}
         onToggleFullscreen={toggleFullscreen}
         showFullscreenButton={!isIOS}
       />
+
+      {/* iOS touch-reveal zone — an invisible tap target in the top-left
+          corner that sits above the game iframe.  Tapping here re-shows
+          the floating "← Library" pill for 3 seconds.  Sized to 64×64px
+          (well above the 44px Apple HIG minimum) and offset by safe-area
+          insets so it aligns with the pill's position. */}
+      {isIOS && !chromeVisible && (
+        <div
+          className="fixed top-0 left-0 z-[55] w-16 h-16"
+          style={{
+            paddingTop: 'env(safe-area-inset-top)',
+            paddingLeft: 'env(safe-area-inset-left)',
+          }}
+          onTouchStart={() => {
+            setChromeVisible(true);
+            clearTimeout(hideTimerRef.current);
+            hideTimerRef.current = setTimeout(() => setChromeVisible(false), 3000);
+          }}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Dismissible landscape orientation hint for portrait mobile.
           Shown only until the user taps "Continue anyway".
