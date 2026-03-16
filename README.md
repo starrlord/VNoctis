@@ -39,6 +39,7 @@
 - **Game Library** — Responsive card grid with banner-style cover images, skeleton loading states, and automatic discovery of new games via file watcher
 - **Search & Filter** — Client-side search by title, filter by rating / build status / metadata source / tags, sort by title / rating / release date / date added / last built
 - **Pagination** — Page-based navigation with prev/next controls, ellipsis compression for large libraries, "Show All" toggle, and responsive sibling-window that tightens on mobile
+- **Favorite Games** — Mark games as favorites with a ❤️ heart icon on library cards, gallery cards, and detail modals; favorites persist across devices via the database; filter the library to show favorites only via a pill badge in the sort bar; the gallery displays a dedicated "❤️ My Favorites" category row
 - **Hide / Unhide Games** — Hide games from the library view via a hover icon on cards or a button in the detail modal; hidden count shown as a pill badge in the sort bar with one-click toggle to reveal hidden items; "Unhide All" button to restore all hidden games at once
 - **VNDB Integration** — Fuzzy-matches game directories to VNDB entries and fetches cover art, synopsis, ratings, developer, tags, screenshots, release date, and estimated play time
 - **Steam Integration** — Search the Steam catalog by name (games + DLC), link any game to a Steam app ID, and pull cover art (library capsule), description, developer, release date, genres, screenshots, and Metacritic score; locally-cached app list refreshes every 24 hours
@@ -46,7 +47,7 @@
 - **Image Compression** — Automatic lossy recompression of JPEG, PNG, and WebP images during web builds using a symlink overlay — original game files are never modified, web builds are 30–60% smaller
 - **Pre-built ZIP Import** — Drop a pre-built web distribution `.zip` into a game directory and the scanner auto-detects, extracts, and marks it as built — no rebuild needed; a **"Mark as Playable"** fallback button lets you bypass the build system entirely for manually extracted web builds
 - **Game Import via UI** — Upload a `.zip`, `.tar.bz2`, or `.rar` game archive or paste a remote URL — with real-time progress bars, drag-and-drop, and automatic extraction into the games directory
-- **In-Browser Player** — Full-screen iframe player with chrome bar, orientation hints for mobile, and a save warning toast
+- **In-Browser Player** — Full-screen iframe player with chrome bar, orientation hints for mobile, and a save warning toast; on iOS (iPhone/iPad) the chrome bar is replaced with a minimal floating "← Library" pill overlay that auto-fades to maximise gameplay viewport
 - **Metadata Management** — Edit metadata manually, refresh from VNDB or Steam, force-link or unlink VNDB / Steam IDs via tabbed search with autocomplete, custom covers via URL
 - **Dark / Light Theme** — System-aware theme toggle with manual override, animated star-field background on build screens and library (dark mode), fully responsive from mobile to desktop
 - **Authentication** — Single-user login with environment-configurable credentials, persistent JWT sessions that survive browser restarts, automatic session validation, and login rate limiting
@@ -422,7 +423,7 @@ All endpoints are prefixed with `/api/v1` and proxied through Nginx.
 | `GET` | `/library/:gameId` | Get full detail for a single game |
 | `POST` | `/library/scan` | Trigger a full directory rescan (returns `202` with job ID) |
 | `GET` | `/library/scan/:jobId` | Get scan job status |
-| `PATCH` | `/library/:gameId` | Update game metadata (manual overrides); also accepts `hidden` (Boolean) to hide/unhide a game |
+| `PATCH` | `/library/:gameId` | Update game metadata (manual overrides); also accepts `hidden` (Boolean) to hide/unhide a game and `favorite` (Boolean) to favorite/unfavorite |
 | `POST` | `/library/:gameId/mark-playable` | Manually mark a game as playable (verifies `index.html` exists in `/web-builds/<dir>/`) |
 | `POST` | `/library/unhide-all` | Bulk unhide all hidden games; returns `{ unhiddenCount }` |
 | `DELETE` | `/library/:gameId` | Fully delete a game — removes source directory, web-build output, covers, screenshots, build logs, build-job records, and the database entry |
@@ -549,18 +550,26 @@ python src/main.py
 │           │   ├── SkeletonCard.jsx
 │           │   ├── SortBar.jsx
 │           │   └── StarBackground.jsx
+│           ├── components/gallery/  # Gallery-specific UI
+│           │   ├── GalleryCard.jsx
+│           │   ├── GalleryDetailModal.jsx
+│           │   ├── GalleryHero.jsx
+│           │   ├── GalleryNavbar.jsx
+│           │   └── GalleryRow.jsx
 │           ├── hooks/         # Custom React hooks
 │           │   ├── useApi.js
 │           │   ├── useAuth.jsx
 │           │   ├── useBuildLog.js
 │           │   ├── useBuildStatus.js
 │           │   ├── useFilterSort.js
+│           │   ├── useGallery.js
 │           │   ├── useLibrary.js
 │           │   └── useTheme.js
 │           ├── lib/
 │           │   └── utils.js
 │           └── pages/
 │               ├── BuildLog.jsx
+│               ├── Gallery.jsx
 │               ├── Library.jsx
 │               ├── Login.jsx
 │               └── Player.jsx
