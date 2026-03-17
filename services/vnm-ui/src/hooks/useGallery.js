@@ -70,17 +70,12 @@ export default function useGallery() {
     fetchGames();
   }, [fetchGames]);
 
-  // Pick featured games for hero rotation: top rated, or random selection
+  // Pick featured games for hero rotation: random selection (prefer rated games)
   const featuredGames = useMemo(() => {
     if (!games.length) return [];
-    const withRating = games.filter((g) => g.vndbRating != null);
-    if (withRating.length) {
-      const sorted = [...withRating].sort((a, b) => b.vndbRating - a.vndbRating);
-      return sorted.slice(0, Math.min(5, sorted.length));
-    }
-    // No ratings — pick up to 5 random games
-    const shuffled = [...games].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, Math.min(5, shuffled.length));
+    const pool = games.filter((g) => g.vndbRating != null);
+    const candidates = pool.length >= 5 ? pool : games;
+    return shuffle(candidates).slice(0, Math.min(5, candidates.length));
   }, [games]);
 
   // Compute Netflix-style category rows
@@ -96,10 +91,10 @@ export default function useGallery() {
       result.push({ title: 'Recently Added', games: recentlyAdded });
     }
 
-    // 2. My Favorites — user-curated list
+    // 2. My Favorites — user-curated list (shuffled)
     const favorites = games.filter((g) => g.favorite);
     if (favorites.length > 0) {
-      result.push({ title: '❤️ My Favorites', games: favorites });
+      result.push({ title: '❤️ My Favorites', games: shuffle(favorites) });
     }
 
     // 3. Top Rated — rating ≥ 7, sorted desc
@@ -110,12 +105,12 @@ export default function useGallery() {
       result.push({ title: 'Top Rated', games: topRated });
     }
 
-    // 3. Quick Plays — length < 120 min
+    // 3. Quick Plays — length < 120 min (shuffled)
     const quickPlays = games.filter(
       (g) => g.lengthMinutes != null && g.lengthMinutes > 0 && g.lengthMinutes < 120
     );
     if (quickPlays.length >= 2) {
-      result.push({ title: 'Quick Plays', games: quickPlays });
+      result.push({ title: 'Quick Plays', games: shuffle(quickPlays) });
     }
 
     // 4. Tag-based rows — group by most common tags
@@ -130,14 +125,13 @@ export default function useGallery() {
       }
     }
 
-    // Sort tags by popularity, take top N
-    const tagRows = [...tagMap.entries()]
-      .filter(([, tagGames]) => tagGames.length >= MIN_TAG_ROW_SIZE)
-      .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, MAX_TAG_ROWS);
+    // Pick tag rows — shuffle which tags appear and shuffle games within each
+    const tagRows = shuffle(
+      [...tagMap.entries()].filter(([, tagGames]) => tagGames.length >= MIN_TAG_ROW_SIZE)
+    ).slice(0, MAX_TAG_ROWS);
 
     for (const [tagName, tagGames] of tagRows) {
-      result.push({ title: tagName, games: tagGames });
+      result.push({ title: tagName, games: shuffle(tagGames) });
     }
 
     // 5. All Games — full collection sorted by title
@@ -189,4 +183,16 @@ function safeJsonParse(str, fallback) {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Fisher-Yates shuffle — returns a new shuffled copy (does not mutate).
+ */
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
