@@ -11,9 +11,10 @@ import { generateGradient, formatRating, getRatingColor, truncate } from '../../
  *   onPlay?: (game: object) => void,
  *   onFavorite?: (gameId: string) => void,
  *   size?: 'normal' | 'large',
+ *   fluid?: boolean,
  * }} props
  */
-export default function GalleryCard({ game, onClick, onPlay, onFavorite, size = 'normal' }) {
+export default function GalleryCard({ game, onClick, onPlay, onFavorite, size = 'normal', fluid = false }) {
   const [hovered, setHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -24,11 +25,11 @@ export default function GalleryCard({ game, onClick, onPlay, onFavorite, size = 
       : null;
   const gradient = generateGradient(title);
 
-  const widthClass = size === 'large' ? 'w-72 sm:w-80' : 'w-56 sm:w-72';
+  const widthClass = fluid ? 'w-full' : (size === 'large' ? 'w-72 sm:w-80' : 'w-56 sm:w-72');
 
   return (
     <div
-      className={`gallery-card-hover relative flex-shrink-0 ${widthClass} cursor-pointer select-none group`}
+      className={`gallery-card-hover relative ${fluid ? '' : 'flex-shrink-0'} ${widthClass} cursor-pointer select-none group`}
       onClick={() => onClick?.(game)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
