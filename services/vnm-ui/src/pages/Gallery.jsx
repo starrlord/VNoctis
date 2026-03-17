@@ -52,7 +52,8 @@ export default function Gallery() {
   // "View More" from a row → show full grid for that category
   const handleViewMore = useCallback((title, categoryGames) => {
     setCategoryView({ title, games: categoryGames });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Immediate scroll to top after switching to category view
+    requestAnimationFrame(() => window.scrollTo(0, 0));
   }, []);
 
   // Tag click from detail modal → find all games with that tag, show grid
@@ -63,7 +64,8 @@ export default function Gallery() {
     });
     if (tagGames.length > 0) {
       setCategoryView({ title: tagName, games: tagGames });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Defer scroll until after modal cleanup restores scroll position
+      setTimeout(() => window.scrollTo(0, 0), 50);
     }
   }, [games]);
 
@@ -148,7 +150,7 @@ export default function Gallery() {
       {/* Content */}
       {isSearching ? (
         /* Search results — flat grid */
-        <div className="pt-20 px-4 sm:px-12 pb-12">
+        <div className="pt-20 px-6 sm:px-16 pb-12">
           <h2 className="text-xl font-bold text-white mb-4">
             {searchResults.length > 0
               ? `Results for "${searchQuery}" (${searchResults.length})`
@@ -163,6 +165,7 @@ export default function Gallery() {
                   onClick={handleCardClick}
                   onPlay={handlePlay}
                   onFavorite={toggleFavorite}
+                  fluid
                 />
               ))}
             </div>
@@ -174,7 +177,7 @@ export default function Gallery() {
         </div>
       ) : categoryView ? (
         /* Category / tag filter view — full grid */
-        <div className="pt-20 px-4 sm:px-12 pb-12">
+        <div className="pt-20 px-6 sm:px-16 pb-12">
           {/* Header with back button */}
           <div className="flex items-center gap-4 mb-6">
             <button
@@ -201,6 +204,7 @@ export default function Gallery() {
                 onClick={handleCardClick}
                 onPlay={handlePlay}
                 onFavorite={toggleFavorite}
+                fluid
               />
             ))}
           </div>

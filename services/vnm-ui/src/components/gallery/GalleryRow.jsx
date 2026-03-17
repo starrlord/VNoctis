@@ -59,7 +59,7 @@ export default function GalleryRow({ title, games, onCardClick, onPlay, onFavori
   return (
     <div className="mb-8 group/row">
       {/* Row title — clickable when onViewMore is available */}
-      <h2 className="text-lg sm:text-xl font-bold text-white mb-3 px-4 sm:px-12 flex items-center gap-2">
+      <h2 className="text-lg sm:text-xl font-bold text-white mb-3 px-6 sm:px-16 flex items-center gap-2">
         {onViewMore ? (
           <button
             onClick={() => onViewMore(title, games)}
@@ -84,13 +84,13 @@ export default function GalleryRow({ title, games, onCardClick, onPlay, onFavori
         </span>
       </h2>
 
-      {/* Scrollable container */}
-      <div className="relative">
+      {/* Scrollable container — left padding is outside the scroll area so it never scrolls away */}
+      <div className="relative pl-6 sm:pl-16">
         {/* Left scroll arrow */}
         {canScrollLeft && (
           <button
             onClick={() => scroll('left')}
-            className="gallery-scroll-arrow absolute left-0 top-0 bottom-8 z-10 w-10 sm:w-14 flex items-center justify-center bg-gradient-to-r from-[#111] via-[#111]/80 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity duration-300 cursor-pointer"
+            className="gallery-scroll-arrow absolute left-0 top-0 bottom-8 z-10 w-10 sm:w-20 flex items-center justify-center bg-gradient-to-r from-[#111] via-[#111]/80 to-transparent opacity-0 group-hover/row:opacity-100 transition-opacity duration-300 cursor-pointer"
             aria-label="Scroll left"
           >
             <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
@@ -99,10 +99,10 @@ export default function GalleryRow({ title, games, onCardClick, onPlay, onFavori
           </button>
         )}
 
-        {/* Cards row */}
+        {/* Cards row — only right padding inside the scrollable area */}
         <div
           ref={scrollRef}
-          className="flex gap-3 overflow-x-auto gallery-row-scroll px-4 sm:px-12 pb-2 scroll-smooth"
+          className="flex gap-3 overflow-x-auto gallery-row-scroll pr-6 sm:pr-16 pb-2 scroll-smooth"
           style={{ scrollSnapType: 'x proximity' }}
         >
           {displayedGames.map((game) => (
