@@ -57,7 +57,11 @@ export default function useGallery() {
       prev.map((g) => (g.id === gameId ? { ...g, favorite: newFav } : g))
     );
     try {
-      await api.patch(`/library/${gameId}`, { favorite: newFav });
+      if (newFav) {
+        await api.post(`/favorites/${gameId}`);
+      } else {
+        await api.delete(`/favorites/${gameId}`);
+      }
     } catch {
       // Revert on failure
       setGames((prev) =>

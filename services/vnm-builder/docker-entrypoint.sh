@@ -68,9 +68,9 @@ fi
 
 # ── Copy custom web presplash image ───────────────────────
 # Replaces the default Ren'Py loading screen with a custom branded one.
-if [ -f /app/web-presplash.jpg ] && [ -d /renpy-sdk/web ]; then
-    cp /app/web-presplash.jpg /renpy-sdk/web/web-presplash.jpg
-    echo "[vnm-builder] Custom web-presplash.jpg applied"
+if [ -f /app/web-presplash.webp ] && [ -d /renpy-sdk/web ]; then
+    cp /app/web-presplash.webp /renpy-sdk/web/web-presplash.webp
+    echo "[vnm-builder] Custom web-presplash.webp applied"
 fi
 
 # ── Ensure SDK launcher is executable ──────────────────────

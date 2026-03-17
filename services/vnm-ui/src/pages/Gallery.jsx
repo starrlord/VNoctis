@@ -245,6 +245,11 @@ export default function Gallery() {
           onFavorite={toggleFavorite}
         />
       )}
+
+      {/* Version footer */}
+      <footer className="py-6 text-center text-xs text-gray-500">
+        VNoctis Manager v{__APP_VERSION__} &middot; Manage &amp; Play Your Visual Novels
+      </footer>
     </div>
   );
 }

@@ -190,7 +190,7 @@ export default function Login() {
 
         {/* Footer text */}
         <p className="mt-6 text-center text-xs text-gray-400 dark:text-gray-500">
-          Visual Novel Manager &middot; Manage &amp; Play your Visual Novels
+          VNoctis Manager v{__APP_VERSION__} &middot; Manage &amp; Play Your Visual Novels
         </p>
       </div>
     </div>

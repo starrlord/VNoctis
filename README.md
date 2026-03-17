@@ -39,7 +39,7 @@
 - **Game Library** — Responsive card grid with banner-style cover images, skeleton loading states, and automatic discovery of new games via file watcher
 - **Search & Filter** — Client-side search by title, filter by rating / build status / metadata source / tags, sort by title / rating / release date / date added / last built
 - **Pagination** — Page-based navigation with prev/next controls, ellipsis compression for large libraries, "Show All" toggle, and responsive sibling-window that tightens on mobile
-- **Favorite Games** — Mark games as favorites with a ❤️ heart icon on library cards, gallery cards, and detail modals; favorites persist across devices via the database; filter the library to show favorites only via a pill badge in the sort bar; the gallery displays a dedicated "❤️ My Favorites" category row
+- **Favorite Games** — Mark games as favorites with a ❤️ heart icon on library cards, gallery cards, and detail modals; per-user favorites persist across devices via the database; each user maintains their own favorites list; filter the library to show favorites only via a pill badge in the sort bar; the gallery displays a dedicated "❤️ My Favorites" category row scoped to the logged-in user
 - **Hide / Unhide Games** — Hide games from the library view via a hover icon on cards or a button in the detail modal; hidden count shown as a pill badge in the sort bar with one-click toggle to reveal hidden items; "Unhide All" button to restore all hidden games at once
 - **VNDB Integration** — Fuzzy-matches game directories to VNDB entries and fetches cover art, synopsis, ratings, developer, tags, screenshots, release date, and estimated play time
 - **Steam Integration** — Search the Steam catalog by name (games + DLC), link any game to a Steam app ID, and pull cover art (library capsule), description, developer, release date, genres, screenshots, and Metacritic score; locally-cached app list refreshes every 24 hours
@@ -50,7 +50,8 @@
 - **In-Browser Player** — Full-screen iframe player with chrome bar, orientation hints for mobile, and a save warning toast; on iOS (iPhone/iPad) the chrome bar is replaced with a minimal floating "← Library" pill overlay that auto-fades to maximise gameplay viewport
 - **Metadata Management** — Edit metadata manually, refresh from VNDB or Steam, force-link or unlink VNDB / Steam IDs via tabbed search with autocomplete, custom covers via URL
 - **Dark / Light Theme** — System-aware theme toggle with manual override, animated star-field background on build screens and library (dark mode), fully responsive from mobile to desktop
-- **Authentication** — Single-user login with environment-configurable credentials, persistent JWT sessions that survive browser restarts, automatic session validation, and login rate limiting
+- **Multi-User Authentication** — Database-backed user accounts with bcrypt password hashing, two roles (`admin` / `viewer`), persistent JWT sessions with `userId` + `role`, automatic session validation, login rate limiting, and an admin user management panel for creating, editing, and deleting accounts
+- **User Management Panel** — Admin-only page for managing user accounts: create users with username/password/role, change roles (admin ↔ viewer), reset passwords, and delete accounts with cascading favorite cleanup; safety guards prevent deleting yourself or demoting the last admin
 - **Progressive Downloads** — Automatically generates `progressive_download.txt` rules so GUI images load upfront while game art, music, and voice stream on demand — existing rules in a game directory are preserved
 - **Custom Loading Screen** — Branded web presplash image automatically replaces the default Ren'Py loading screen in all web builds
 - **Docker-Native** — Single compose stack with health checks, resource limits, network isolation, and named volumes
@@ -157,10 +158,11 @@ ${VNM_ROOT}/
 
 | Variable | Default | Description |
 |---|---|---|
-| `VNM_ADMIN_USER` | `admin` | Login username |
-| `VNM_ADMIN_PASSWORD` | *(required)* | Login password — the API refuses to start if this is not set |
+| `VNM_ADMIN_USER` | `admin` | Initial admin username — used to seed the admin account on **first startup only**; subsequent logins authenticate against the database |
+| `VNM_ADMIN_PASSWORD` | *(required)* | Initial admin password — used to seed the admin account on **first startup only** (stored as a bcrypt hash in the database); also used when `RESET_ADMIN_PASSWORD=true` to force-reset the admin password |
 | `VNM_JWT_SECRET` | *(auto-generated)* | JWT signing secret; auto-created and persisted to `/data/.jwt-secret` if not provided |
 | `VNM_SESSION_TTL_DAYS` | `30` | How many days login sessions remain valid before requiring re-authentication |
+| `RESET_ADMIN_PASSWORD` | `false` | Set to `true` to force-reset the initial admin account's password from `VNM_ADMIN_PASSWORD` on next startup; resets to `false` behavior after the update completes |
 
 ### VNDB Integration
 
@@ -413,34 +415,64 @@ This applies to all build paths: compressed, uncompressed, and rebuilds. When us
 
 All endpoints are prefixed with `/api/v1` and proxied through Nginx.
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | Service health check (database, builder, library stats) |
-| `POST` | `/auth/login` | Authenticate with username & password, returns JWT |
-| `POST` | `/auth/logout` | End session (client removes token) |
-| `GET` | `/auth/me` | Validate current session, returns `{ username }` |
-| `GET` | `/library` | List all games (supports `search`, `sort`, `order`, `buildStatus`, `metadataSource`, `includeHidden` query params — hidden games are filtered out by default; pass `includeHidden=true` to include them) |
-| `GET` | `/library/:gameId` | Get full detail for a single game |
-| `POST` | `/library/scan` | Trigger a full directory rescan (returns `202` with job ID) |
-| `GET` | `/library/scan/:jobId` | Get scan job status |
-| `PATCH` | `/library/:gameId` | Update game metadata (manual overrides); also accepts `hidden` (Boolean) to hide/unhide a game and `favorite` (Boolean) to favorite/unfavorite |
-| `POST` | `/library/:gameId/mark-playable` | Manually mark a game as playable (verifies `index.html` exists in `/web-builds/<dir>/`) |
-| `POST` | `/library/unhide-all` | Bulk unhide all hidden games; returns `{ unhiddenCount }` |
-| `DELETE` | `/library/:gameId` | Fully delete a game — removes source directory, web-build output, covers, screenshots, build logs, build-job records, and the database entry |
-| `GET` | `/covers/:gameId` | Serve cached cover image for a game |
-| `GET` | `/metadata/vndb/search?q=` | Search VNDB by title (min 3 chars) — returns `[{ id, title, alttitle, developer, released }]` for autocomplete |
-| `POST` | `/metadata/:gameId/refresh` | Re-fetch VNDB metadata (optional body: `{ "vndbId": "v12345" }` to force-link) |
-| `POST` | `/build/:gameId` | Queue a WebAssembly build for a game (returns `202`) |
-| `GET` | `/build/:jobId` | Get build job status |
-| `GET` | `/build/:jobId/log` | SSE stream of build log lines |
-| `DELETE` | `/build/:jobId` | Cancel a queued or in-progress build |
-| `POST` | `/library/import` | Upload a game archive — `.zip`, `.tar.bz2`, or `.rar` (multipart form, field: `file`) |
-| `POST` | `/library/import-url` | Import from URL (JSON body: `{ "url": "..." }`, streams NDJSON progress; supports `.zip`, `.tar.bz2`, `.rar`) |
-| `POST` | `/internal/client-error` | Report a client-side error for persistent logging (JSON body: `{ message, stack?, componentStack?, url?, userAgent? }`; rate-limited to 100/min) |
-| `POST` | `/internal/build/:jobId/status` | Builder callback — update build job status (`building`, `done`, `failed`) |
-| `POST` | `/internal/build/:jobId/log` | Builder callback — append a log line to the in-memory buffer for SSE subscribers |
+### Authentication & Users
 
-> **Authentication:** All endpoints except `/health`, `/auth/*`, `/internal/*`, `/covers/*`, and `/build/:jobId/log` (SSE) require a valid `Authorization: Bearer <token>` header. Obtain a token via `POST /auth/login`.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/auth/login` | — | Authenticate with username & password, returns JWT with `{ userId, username, role }` |
+| `POST` | `/auth/logout` | — | End session (client removes token) |
+| `GET` | `/auth/me` | any | Validate current session, returns `{ userId, username, role }` |
+| `GET` | `/users` | admin | List all users with favorite counts |
+| `POST` | `/users` | admin | Create a new user (`{ username, password, role? }`) |
+| `PATCH` | `/users/:userId` | admin | Update a user's role (`{ role }`) |
+| `DELETE` | `/users/:userId` | admin | Delete a user (cascades favorites); cannot delete self or last admin |
+| `POST` | `/users/:userId/reset-password` | admin | Reset a user's password (`{ password }`) |
+
+### Favorites
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/favorites` | any | List current user's favorited game IDs |
+| `POST` | `/favorites/:gameId` | any | Add a game to the current user's favorites |
+| `DELETE` | `/favorites/:gameId` | any | Remove a game from the current user's favorites |
+
+### Library
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/library` | any | List all games with per-user `favorite` field (supports `search`, `sort`, `order`, `buildStatus`, `metadataSource`, `includeHidden` query params — hidden games filtered out by default; pass `includeHidden=true` to include them) |
+| `GET` | `/library/:gameId` | any | Get full detail for a single game (includes per-user `favorite` field) |
+| `POST` | `/library/scan` | admin | Trigger a full directory rescan (returns `202` with job ID) |
+| `GET` | `/library/scan/:jobId` | any | Get scan job status |
+| `PATCH` | `/library/:gameId` | admin | Update game metadata (manual overrides); also accepts `hidden` (Boolean) to hide/unhide a game |
+| `POST` | `/library/:gameId/mark-playable` | admin | Manually mark a game as playable (verifies `index.html` exists in `/web-builds/<dir>/`) |
+| `POST` | `/library/unhide-all` | admin | Bulk unhide all hidden games; returns `{ unhiddenCount }` |
+| `DELETE` | `/library/:gameId` | admin | Fully delete a game — removes source directory, web-build output, covers, screenshots, build logs, build-job records, and the database entry |
+| `POST` | `/library/import` | admin | Upload a game archive — `.zip`, `.tar.bz2`, or `.rar` (multipart form, field: `file`) |
+| `POST` | `/library/import-url` | admin | Import from URL (JSON body: `{ "url": "..." }`, streams NDJSON progress; supports `.zip`, `.tar.bz2`, `.rar`) |
+
+### Metadata & Builds
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/covers/:gameId` | — | Serve cached cover image for a game |
+| `GET` | `/metadata/vndb/search?q=` | admin | Search VNDB by title (min 3 chars) — returns `[{ id, title, alttitle, developer, released }]` for autocomplete |
+| `POST` | `/metadata/:gameId/refresh` | admin | Re-fetch VNDB metadata (optional body: `{ "vndbId": "v12345" }` to force-link) |
+| `POST` | `/build/:gameId` | admin | Queue a WebAssembly build for a game (returns `202`) |
+| `GET` | `/build/:jobId` | any | Get build job status |
+| `GET` | `/build/:jobId/log` | — | SSE stream of build log lines |
+| `DELETE` | `/build/:jobId` | admin | Cancel a queued or in-progress build |
+| `GET` | `/health` | — | Service health check (database, builder, library stats) |
+
+### Internal (service-to-service)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/internal/client-error` | — | Report a client-side error for persistent logging (JSON body: `{ message, stack?, componentStack?, url?, userAgent? }`; rate-limited to 100/min) |
+| `POST` | `/internal/build/:jobId/status` | — | Builder callback — update build job status (`building`, `done`, `failed`) |
+| `POST` | `/internal/build/:jobId/log` | — | Builder callback — append a log line to the in-memory buffer for SSE subscribers |
+
+> **Authentication:** All endpoints except `/health`, `/auth/*`, `/internal/*`, `/covers/*`, and `/build/:jobId/log` (SSE) require a valid `Authorization: Bearer <token>` header. Obtain a token via `POST /auth/login`. Endpoints marked **admin** return `403 Forbidden` for viewer-role users.
 
 ---
 
@@ -497,11 +529,13 @@ python src/main.py
 │   │       │   ├── auth.js
 │   │       │   ├── build.js
 │   │       │   ├── covers.js
+│   │       │   ├── favorites.js   # Per-user favorites endpoints
 │   │       │   ├── health.js
 │   │       │   ├── import.js
 │   │       │   ├── internal.js
 │   │       │   ├── library.js
-│   │       │   └── metadata.js
+│   │       │   ├── metadata.js
+│   │       │   └── users.js       # User management CRUD (admin only)
 │   │       └── services/      # Business logic
 │   │           ├── buildOrchestrator.js
 │   │           ├── coverDownloader.js
@@ -536,6 +570,7 @@ python src/main.py
 │           ├── index.css
 │           ├── components/    # UI components
 │           │   ├── BuildProgress.jsx
+│           │   ├── CreateUserModal.jsx     # Create user form modal (admin)
 │           │   ├── ErrorBoundary.jsx
 │           │   ├── GameCard.jsx
 │           │   ├── GameDetailModal.jsx
@@ -544,6 +579,7 @@ python src/main.py
 │           │   ├── Navbar.jsx
 │           │   ├── Pagination.jsx
 │           │   ├── PlayerChrome.jsx
+│           │   ├── ResetPasswordModal.jsx  # Password reset modal (admin)
 │           │   ├── SaveWarningToast.jsx
 │           │   ├── ScreenshotLightbox.jsx
 │           │   ├── SearchAndFilter.jsx
@@ -564,7 +600,8 @@ python src/main.py
 │           │   ├── useFilterSort.js
 │           │   ├── useGallery.js
 │           │   ├── useLibrary.js
-│           │   └── useTheme.js
+│           │   ├── useTheme.js
+│           │   └── useUsers.js    # User management data hook (admin)
 │           ├── lib/
 │           │   └── utils.js
 │           └── pages/
@@ -572,7 +609,8 @@ python src/main.py
 │               ├── Gallery.jsx
 │               ├── Library.jsx
 │               ├── Login.jsx
-│               └── Player.jsx
+│               ├── Player.jsx
+│               └── UserManagement.jsx  # Admin user management page
 ├── extras/
 │   └── screenshots/           # README screenshot images
 └── README_Security.md         # Security audit report
@@ -604,7 +642,7 @@ python src/main.py
 | **Pre-built ZIP not detected** | Ensure the `.zip` is placed directly inside the game directory (alongside the `game/` folder). Trigger a manual rescan via the UI or API endpoint. |
 | **"App won't start — missing VNM_ADMIN_PASSWORD"** | Set `VNM_ADMIN_PASSWORD` in your `.env` file. This variable is required and has no default value. |
 | **"Session expired / logged out unexpectedly"** | Increase `VNM_SESSION_TTL_DAYS` in `.env` (default is 30 days). Clearing browser data also removes the session. |
-| **"Forgot admin password"** | Change `VNM_ADMIN_PASSWORD` in `.env` and restart the API container (`docker compose restart vnm-api`). No database migration needed — credentials are checked against environment variables. |
+| **"Forgot admin password"** | Set `RESET_ADMIN_PASSWORD=true` and the desired `VNM_ADMIN_PASSWORD` in `.env`, then restart the API container (`docker compose restart vnm-api`). The admin account's password will be updated from the environment variable on next startup. Remove `RESET_ADMIN_PASSWORD` (or set to `false`) afterwards. |
 | **Finding error logs** | Persistent logs are at `${VNM_ROOT}/data/logs/vnm-api.log` and `${VNM_ROOT}/data/logs/vnm-builder.log` (structured JSON, one object per line). You can also use `docker compose logs vnm-api` / `docker compose logs vnm-builder` for recent stdout output. Client-side (browser) errors are forwarded to the API log via the `ErrorBoundary` component. |
 
 ---

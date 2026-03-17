@@ -17,6 +17,8 @@ import metadataRoutes from './routes/metadata.js';
 import coversRoutes from './routes/covers.js';
 import importRoutes from './routes/import.js';
 import internalRoutes from './routes/internal.js';
+import favoritesRoutes from './routes/favorites.js';
+import usersRoutes from './routes/users.js';
 import { scanGamesDirectory } from './services/scanner.js';
 import { VNDBClient } from './services/vndbClient.js';
 import { SteamClient } from './services/steamClient.js';
@@ -169,6 +171,12 @@ await fastify.register(importRoutes, { prefix: '/api/v1' });
 // ── Auth routes ───────────────────────────────────────────
 await fastify.register(authRoutes, { prefix: '/api/v1' });
 
+// ── Favorites routes (per-user) ───────────────────────────
+await fastify.register(favoritesRoutes, { prefix: '/api/v1' });
+
+// ── User management routes (admin-only) ───────────────────
+await fastify.register(usersRoutes, { prefix: '/api/v1' });
+
 // ── Internal routes (builder callbacks) ───────────────────
 await fastify.register(internalRoutes, { prefix: '/api/v1' });
 
@@ -198,7 +206,41 @@ fastify.addHook('onRequest', async (request, reply) => {
   const token = authHeader.slice(7);
   try {
     const decoded = jwt.verify(token, fastify.jwtSecret);
-    request.user = decoded;
+
+    // Verify the user still exists in the database and get their current role.
+    // This prevents deleted users from making API calls with stale tokens and
+    // ensures role changes (admin→viewer) take effect immediately rather than
+    // waiting for token expiry. (Resolves Security Finding #13)
+    const dbUser = await fastify.prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, role: true },
+    });
+
+    if (!dbUser) {
+      reply.code(401).send({ code: 'UNAUTHORIZED', message: 'User account no longer exists' });
+      return;
+    }
+
+    // Use the database role (authoritative) instead of the JWT role (stale)
+    request.user = { ...decoded, role: dbUser.role };
+
+    // Admin-only routes
+    const isAdminRoute =
+      url.startsWith('/api/v1/users') ||
+      url.startsWith('/api/v1/library/scan') ||
+      url.startsWith('/api/v1/library/import') ||
+      url === '/api/v1/library/unhide-all' ||
+      (request.method === 'DELETE' && /^\/api\/v1\/library\/[^/]+$/.test(url)) ||
+      (request.method === 'PATCH' && /^\/api\/v1\/library\/[^/]+$/.test(url)) ||
+      /^\/api\/v1\/library\/[^/]+\/mark-playable$/.test(url) ||
+      (request.method === 'POST' && /^\/api\/v1\/build\/[^/]+$/.test(url) && !url.includes('/log')) ||
+      (request.method === 'DELETE' && /^\/api\/v1\/build\/[^/]+$/.test(url)) ||
+      /^\/api\/v1\/metadata\//.test(url);
+
+    if (isAdminRoute && dbUser.role !== 'admin') {
+      reply.code(403).send({ code: 'FORBIDDEN', message: 'Admin access required' });
+      return;
+    }
   } catch (err) {
     reply.code(401).send({ code: 'UNAUTHORIZED', message: 'Invalid or expired token' });
     return;
@@ -298,6 +340,106 @@ const start = async () => {
       fastify.log.error(
         { err: migrationErr.message },
         'Database migration failed — continuing with existing schema'
+      );
+    }
+
+    // ── Admin user seed & favorite migration ────────────────
+    // Runs once on first startup after the multi-user migration.
+    // Creates the initial admin from VNM_ADMIN_USER / VNM_ADMIN_PASSWORD,
+    // then migrates any Game.favorite=true rows to per-user UserFavorite.
+    try {
+      const bcrypt = await import('bcrypt');
+      const adminCount = await prisma.user.count({ where: { role: 'admin' } });
+
+      if (adminCount === 0) {
+        const adminUsername = process.env.VNM_ADMIN_USER || 'admin';
+        const adminPassword = process.env.VNM_ADMIN_PASSWORD;
+
+        if (!adminPassword) {
+          fastify.log.error(
+            'VNM_ADMIN_PASSWORD is required to seed the initial admin user'
+          );
+        } else {
+          const hash = await bcrypt.default.hash(adminPassword, 12);
+          const adminUser = await prisma.user.create({
+            data: {
+              username: adminUsername,
+              passwordHash: hash,
+              role: 'admin',
+            },
+          });
+          fastify.log.info(
+            { username: adminUsername },
+            'Created initial admin user from environment variables'
+          );
+
+          // Migrate existing global favorites to the new admin user.
+          // Game.favorite column is still present at this point (deprecated,
+          // will be dropped in a follow-up migration after seed has run).
+          try {
+            const favoritedGames = await prisma.game.findMany({
+              where: { favorite: true },
+              select: { id: true },
+            });
+
+            if (favoritedGames.length > 0) {
+              await prisma.userFavorite.createMany({
+                data: favoritedGames.map((g) => ({
+                  userId: adminUser.id,
+                  gameId: g.id,
+                })),
+                skipDuplicates: true,
+              });
+              fastify.log.info(
+                { count: favoritedGames.length },
+                'Migrated existing favorites to admin user'
+              );
+            }
+          } catch (favMigErr) {
+            // Non-fatal: favorite column may already be dropped (re-run scenario)
+            fastify.log.warn(
+              { err: favMigErr.message },
+              'Could not migrate favorites (column may already be removed)'
+            );
+          }
+        }
+      }
+
+      // Handle RESET_ADMIN_PASSWORD — explicit opt-in to reset from env var
+      if (
+        process.env.RESET_ADMIN_PASSWORD === 'true' &&
+        process.env.VNM_ADMIN_PASSWORD
+      ) {
+        const adminUsername = process.env.VNM_ADMIN_USER || 'admin';
+        const adminUser = await prisma.user.findUnique({
+          where: { username: adminUsername },
+        });
+
+        if (adminUser) {
+          const newHash = await bcrypt.default.hash(
+            process.env.VNM_ADMIN_PASSWORD,
+            12
+          );
+          await prisma.user.update({
+            where: { id: adminUser.id },
+            data: { passwordHash: newHash },
+          });
+          fastify.log.info(
+            { username: adminUsername },
+            'Admin password reset from VNM_ADMIN_PASSWORD (RESET_ADMIN_PASSWORD=true)'
+          );
+        } else {
+          fastify.log.warn(
+            { username: adminUsername },
+            'RESET_ADMIN_PASSWORD set but admin user not found'
+          );
+        }
+      }
+    } catch (seedErr) {
+      // If the User table doesn't exist yet (migration not applied), skip seeding
+      fastify.log.warn(
+        { err: seedErr.message },
+        'Admin seed skipped — User table may not exist yet'
       );
     }
 

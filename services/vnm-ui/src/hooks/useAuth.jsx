@@ -5,7 +5,7 @@ const AuthContext = createContext(null);
 const TOKEN_KEY = 'vnm-token';
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);        // { username } or null
+  const [user, setUser] = useState(null);        // { userId, username, role } or null
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState(true);   // true while validating stored token
 
@@ -50,7 +50,17 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     localStorage.setItem(TOKEN_KEY, data.token);
     setToken(data.token);
-    setUser({ username });
+
+    // Fetch full user profile (userId, username, role) from the new token
+    const meRes = await fetch('/api/v1/auth/me', {
+      headers: { Authorization: `Bearer ${data.token}` },
+    });
+    if (meRes.ok) {
+      const me = await meRes.json();
+      setUser(me); // { userId, username, role }
+    } else {
+      setUser({ username }); // Fallback
+    }
   }, []);
 
   const logout = useCallback(() => {
@@ -61,8 +71,10 @@ export function AuthProvider({ children }) {
     fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
   }, []);
 
+  const isAdmin = user?.role === 'admin';
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, isAuthenticated: !!user, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );
