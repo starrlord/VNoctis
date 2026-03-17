@@ -19,7 +19,7 @@ import {
  *
  * @param {{ gameId: string, onClose: () => void, onDeleted?: () => void, onHide?: (game: object) => void, onFavorite?: (game: object) => void, onTagClick?: (tagName: string) => void }} props
  */
-export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, onFavorite, onTagClick }) {
+export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, onFavorite, onTagClick, isAdmin = true }) {
   const navigate = useNavigate();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -369,39 +369,45 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                   >
                     {isBuilt ? '▶ Play' : '▶ Build & Play'}
                   </button>
-                  {buildTriggered ? (
-                    <a
-                      href={`/build-log/${game?.buildJobId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm inline-flex items-center gap-1.5"
-                    >
-                      🔨 View Build Log
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                      </svg>
-                    </a>
-                  ) : (
+                  {isAdmin && (
+                    buildTriggered ? (
+                      <a
+                        href={`/build-log/${game?.buildJobId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm inline-flex items-center gap-1.5"
+                      >
+                        🔨 View Build Log
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                        </svg>
+                      </a>
+                    ) : (
+                      <button
+                        onClick={handleBuild}
+                        className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm"
+                      >
+                        {isBuilt ? '🔨 Rebuild' : '🔨 Build'}
+                      </button>
+                    )
+                  )}
+                  {isAdmin && (
                     <button
-                      onClick={handleBuild}
-                      className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm"
+                      onClick={handleRefreshMetadata}
+                      disabled={refreshTriggered}
+                      className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm"
                     >
-                      {isBuilt ? '🔨 Rebuild' : '🔨 Build'}
+                      {refreshTriggered ? '🔄 Refreshing…' : '🔄 Refresh Metadata'}
                     </button>
                   )}
-                  <button
-                    onClick={handleRefreshMetadata}
-                    disabled={refreshTriggered}
-                    className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm"
-                  >
-                    {refreshTriggered ? '🔄 Refreshing…' : '🔄 Refresh Metadata'}
-                  </button>
-                  <button
-                    onClick={() => setShowEditModal(true)}
-                    className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm"
-                  >
-                    ✏️ Edit
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setShowEditModal(true)}
+                      className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm"
+                    >
+                      ✏️ Edit
+                    </button>
+                  )}
                   {/* Favorite toggle */}
                   {onFavorite && (
                     <button
@@ -418,8 +424,8 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                       {game.favorite ? '❤️ Favorited' : '🤍 Favorite'}
                     </button>
                   )}
-                  {/* Hide/Unhide toggle */}
-                  {onHide && (
+                  {/* Hide/Unhide toggle (admin only) */}
+                  {isAdmin && onHide && (
                     <button
                       onClick={() => {
                         setGame((prev) => prev ? { ...prev, hidden: !prev.hidden } : prev);
@@ -434,12 +440,14 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                       {game.hidden ? '👁 Unhide' : '👁‍🗨 Hide'}
                     </button>
                   )}
-                  <button
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="px-4 py-2.5 bg-red-600/80 hover:bg-red-500 text-white font-medium rounded-lg transition-colors duration-200 text-sm"
-                  >
-                    🗑️ Delete
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="px-4 py-2.5 bg-red-600/80 hover:bg-red-500 text-white font-medium rounded-lg transition-colors duration-200 text-sm"
+                    >
+                      🗑️ Delete
+                    </button>
+                  )}
                   {game.vndbId && (
                     <a
                       href={`https://vndb.org/${game.vndbId}`}

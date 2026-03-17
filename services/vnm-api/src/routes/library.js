@@ -122,7 +122,21 @@ export default async function libraryRoutes(fastify) {
       orderBy: { [sortField]: orderDir },
     });
 
-    return games.map(parseGameJsonFields);
+    // Attach per-user favorite status
+    const userId = request.user?.userId;
+    let favoriteSet = new Set();
+    if (userId) {
+      const userFavorites = await fastify.prisma.userFavorite.findMany({
+        where: { userId },
+        select: { gameId: true },
+      });
+      favoriteSet = new Set(userFavorites.map(f => f.gameId));
+    }
+
+    return games.map(g => ({
+      ...parseGameJsonFields(g),
+      favorite: favoriteSet.has(g.id),
+    }));
   });
 
   /**
@@ -162,7 +176,20 @@ export default async function libraryRoutes(fastify) {
       });
     }
 
-    return parseGameJsonFields(game);
+    // Attach per-user favorite status
+    const userId = request.user?.userId;
+    let isFavorite = false;
+    if (userId) {
+      const fav = await fastify.prisma.userFavorite.findUnique({
+        where: { userId_gameId: { userId, gameId } },
+      });
+      isFavorite = !!fav;
+    }
+
+    return {
+      ...parseGameJsonFields(game),
+      favorite: isFavorite,
+    };
   });
 
   /**
@@ -254,7 +281,6 @@ export default async function libraryRoutes(fastify) {
       'tags',
       'screenshots',
       'hidden',
-      'favorite',
     ];
 
     const updateData = {};
@@ -310,8 +336,8 @@ export default async function libraryRoutes(fastify) {
       }
     }
 
-    // Mark as manually edited (but not for hide/favorite-only toggles)
-    const nonHiddenFields = Object.keys(updateData).filter(k => k !== 'hidden' && k !== 'favorite');
+    // Mark as manually edited (but not for hide-only toggles)
+    const nonHiddenFields = Object.keys(updateData).filter(k => k !== 'hidden');
     if (nonHiddenFields.length > 0) {
       updateData.metadataSource = 'manual';
     }

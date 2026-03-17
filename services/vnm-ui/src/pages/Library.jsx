@@ -8,12 +8,14 @@ import Pagination from '../components/Pagination';
 import StarBackground from '../components/StarBackground';
 import useFilterSort from '../hooks/useFilterSort';
 import useLibrary from '../hooks/useLibrary';
+import useAuth from '../hooks/useAuth';
 
 /**
  * Library page — Netflix-style poster wall with search, filter, sort, and detail modal.
  * Owns its own data via useLibrary (fetches games, handles scanning).
  */
 export default function Library() {
+  const { isAdmin } = useAuth();
   const { games, loading, error, refetch, scanning, triggerScan, hideGame, unhideAll, favoriteGame } = useLibrary();
   const [selectedGameId, setSelectedGameId] = useState(null);
 
@@ -206,7 +208,7 @@ export default function Library() {
         />
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {showHidden && hiddenCount > 0 && (
+          {isAdmin && showHidden && hiddenCount > 0 && (
             <button
               onClick={handleUnhideAll}
               className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-orange-500 dark:text-orange-400 hover:text-orange-600 dark:hover:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors duration-200"
@@ -219,29 +221,31 @@ export default function Library() {
               Unhide All
             </button>
           )}
-          <button
-            onClick={triggerScan}
-            disabled={scanning}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors duration-200"
-            title="Rescan games directory"
-          >
-            {scanning ? (
-              <>
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Scanning…
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-                </svg>
-                Rescan
-              </>
-            )}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={triggerScan}
+              disabled={scanning}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors duration-200"
+              title="Rescan games directory"
+            >
+              {scanning ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Scanning…
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                  </svg>
+                  Rescan
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -250,7 +254,7 @@ export default function Library() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedGames.map((game) => (
-              <GameCard key={game.id} game={game} onClick={handleCardClick} onHide={handleHide} onFavorite={handleFavorite} />
+              <GameCard key={game.id} game={game} onClick={handleCardClick} onHide={handleHide} onFavorite={handleFavorite} isAdmin={isAdmin} />
             ))}
           </div>
 
@@ -279,6 +283,11 @@ export default function Library() {
           </button>
         </div>
       )}
+
+      {/* Version footer */}
+      <footer className="pt-8 pb-4 text-center text-xs text-gray-500 dark:text-gray-600">
+        VNoctis Manager v{__APP_VERSION__} &middot; Manage &amp; Play Your Visual Novels
+      </footer>
     </div>
 
     {/* Detail modal — rendered outside the z-10 stacking context so its
@@ -298,6 +307,7 @@ export default function Library() {
           toggleTag(tagName);
           setSelectedGameId(null);
         }}
+        isAdmin={isAdmin}
       />
     )}
     </>

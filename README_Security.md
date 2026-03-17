@@ -1,7 +1,8 @@
 # Security Audit — VNoctis Manager
 
-**Audit date:** 2026-03-12 (re-audited after Node.js 24 upgrade + logging improvements)
-**Scope:** Full codebase review — authentication, session management, input validation, Docker configuration, API security, error handling
+**Audit date:** 2026-03-17 (re-audited after multi-user feature implementation)
+**Previous audits:** 2026-03-12 (Node.js 24 upgrade + logging), initial audit
+**Scope:** Full codebase review — authentication, session management, input validation, Docker configuration, API security, error handling, multi-user role-based access control
 
 ---
 
@@ -11,9 +12,11 @@
 |---|---|---|
 | Hardcoded JWT secret | Auto-generated with `randomBytes(64)`, persisted to `/data/.jwt-secret` with `0o600` perms | **PASS** |
 | Cookie HttpOnly/Secure/SameSite missing | N/A — uses `localStorage` + `Authorization: Bearer` headers, not cookies | **See Finding #1** |
-| Password hashed with SHA-256 instead of bcrypt | N/A — env-var sourced, not DB-stored; uses timing-safe comparison | **See Finding #2** |
+| Password hashed with SHA-256 instead of bcrypt | `bcrypt` with cost factor 12, stored in database; dummy hash on user-not-found prevents timing enumeration | **PASS** |
 | No rate limiting on login | `@fastify/rate-limit` — 5 attempts per minute on `POST /auth/login` | **PASS** |
-| Reset token never expires | No password reset flow exists | **PASS** |
+| Reset token never expires | No email-based reset flow; admin password reset is via authenticated endpoint or env var | **PASS** |
+| No role separation | Two roles (`admin` / `viewer`) enforced in auth middleware with DB-verified role on every request | **PASS** |
+| Admin can't be locked out | Cannot delete self, cannot demote last admin; `RESET_ADMIN_PASSWORD` env var for recovery | **PASS** |
 
 ---
 
@@ -21,7 +24,7 @@
 
 ### Finding #1 — Token stored in localStorage (Low–Medium)
 
-**File:** `services/vnm-ui/src/hooks/useAuth.jsx` lines 9, 51
+**File:** `services/vnm-ui/src/hooks/useAuth.jsx` lines 5, 51
 
 ```js
 const TOKEN_KEY = 'vnm-token';
@@ -29,37 +32,27 @@ const TOKEN_KEY = 'vnm-token';
 localStorage.setItem(TOKEN_KEY, data.token);
 ```
 
-**Risk:** `localStorage` is accessible to any JavaScript running on the same origin. If an XSS vulnerability ever exists (even from a third-party library), the attacker can steal the JWT with `localStorage.getItem('vnm-token')`.
+**Risk:** `localStorage` is accessible to any JavaScript running on the same origin. If an XSS vulnerability ever exists (even from a third-party library), the attacker can steal the JWT with `localStorage.getItem('vnm-token')`. With multi-user support, a stolen token could impersonate any user — including admins.
 
-**Mitigation context:** For a self-hosted single-user app on a private network, this is low risk. The alternative (HttpOnly cookies) would require a cookie-based auth flow with CSRF protection, which adds complexity. The current approach is the standard SPA pattern.
+**Mitigation context:** For a self-hosted app on a private network, this is low risk. The alternative (HttpOnly cookies) would require a cookie-based auth flow with CSRF protection, which adds complexity. The current approach is the standard SPA pattern.
 
 **Recommendation:** Acceptable for the current threat model. If ever exposed to the internet, consider switching to HttpOnly cookie-based sessions.
 
 ---
 
-### Finding #2 — Plaintext password comparison (Low — Acceptable)
+### Finding #2 — Plaintext password comparison — ✅ RESOLVED
 
-**File:** `services/vnm-api/src/routes/auth.js` lines 40–51
+**File:** `services/vnm-api/src/routes/auth.js`
 
-```js
-const passBuf = Buffer.from(String(password));
-const expectedPassBuf = Buffer.from(expectedPass);
-const passwordMatch =
-  passBuf.length === expectedPassBuf.length &&
-  timingSafeEqual(passBuf, expectedPassBuf);
-```
+**Previously:** Passwords were compared as plaintext environment variables using `timingSafeEqual`. While timing-safe, passwords were never hashed.
 
-**What is done right:** Uses `timingSafeEqual` for constant-time comparison — this prevents timing attacks. The password lives only in an environment variable, never a database.
-
-**Context:** The password exists as a runtime environment variable and is compared directly. This is the standard pattern for single-user self-hosted apps (e.g., Portainer, Mealie, and many other Docker apps handle admin passwords the same way).
-
-**Recommendation:** No change needed for this use case.
+**Resolution:** Passwords are now hashed with **bcrypt cost factor 12** and stored in the database. The login flow uses `bcrypt.compare()`. A dummy hash (`DUMMY_HASH` constant on line 9) is compared when a user doesn't exist, preventing timing-based user enumeration. The `VNM_ADMIN_PASSWORD` env var is only used for the initial admin seed on first startup and explicit reset via `RESET_ADMIN_PASSWORD=true`.
 
 ---
 
 ### Finding #3 — Internal API endpoints unauthenticated (Medium)
 
-**File:** `services/vnm-api/src/index.js` lines 163–171
+**File:** `services/vnm-api/src/index.js` lines 190–197
 
 ```js
 if (
@@ -76,7 +69,7 @@ if (
 The following endpoints in `services/vnm-api/src/routes/internal.js` are unauthenticated:
 - `POST /api/v1/internal/build/:jobId/status` — builder status callbacks
 - `POST /api/v1/internal/build/:jobId/log` — builder log line forwarding
-- `POST /api/v1/internal/client-error` — **[NEW]** client-side error reporting from the UI's ErrorBoundary
+- `POST /api/v1/internal/client-error` — client-side error reporting from the UI's ErrorBoundary
 
 These are intended for inter-service and client-error communication, but they're reachable through the nginx reverse proxy at `/api/internal/...`.
 
@@ -101,13 +94,13 @@ Or block `/api/v1/internal/build/` at the nginx layer so builder callbacks are o
 
 ### Finding #4 — Build log SSE endpoint unauthenticated (Low)
 
-**File:** `services/vnm-api/src/index.js` line 148
+**File:** `services/vnm-api/src/index.js` line 195
 
 ```js
 /^\/api\/v1\/build\/[^/]+\/log/.test(url)  // Skips auth
 ```
 
-The SSE build log endpoint at `services/vnm-api/src/routes/build.js` line 194 is unauthenticated (comment says "EventSource cannot attach Authorization headers"). This leaks build log content to anyone who can guess a job ID.
+The SSE build log endpoint at `services/vnm-api/src/routes/build.js` is unauthenticated (comment says "EventSource cannot attach Authorization headers"). This leaks build log content to anyone who can guess a job ID.
 
 **Risk:** Low — job IDs are UUIDs, and the logs contain only build output (no secrets). But it's still information disclosure.
 
@@ -117,7 +110,7 @@ The SSE build log endpoint at `services/vnm-api/src/routes/build.js` line 194 is
 
 ### Finding #5 — Cover images endpoint unauthenticated (Low)
 
-**File:** `services/vnm-api/src/index.js` line 147, `services/vnm-api/src/routes/covers.js` line 27
+**File:** `services/vnm-api/src/index.js` line 194, `services/vnm-api/src/routes/covers.js`
 
 Cover images are served without authentication. Game IDs are 32-character hex strings (SHA-256 truncated), so they're not trivially guessable, but they're not secret either (they appear in API responses).
 
@@ -153,23 +146,23 @@ await execFileAsync('unzip', ['-o', archivePath, '-d', gamesPath]);
 
 ### Finding #7 — CORS allows all origins (Low — Intentional)
 
-**File:** `services/vnm-api/src/index.js` line 103
+**File:** `services/vnm-api/src/index.js`
 
 ```js
 await fastify.register(cors, {
-  origin: true, // Allow all origins (single-user self-hosted)
+  origin: true, // Allow all origins (self-hosted)
 });
 ```
 
-**Risk:** With Bearer token auth (not cookies), open CORS is much less dangerous than it would be with cookie-based auth. An attacker's page can't steal the token from localStorage cross-origin. The comment correctly notes this is intentional for self-hosted use.
+**Risk:** With Bearer token auth (not cookies), open CORS is much less dangerous than it would be with cookie-based auth. An attacker's page can't steal the token from localStorage cross-origin.
 
 **Recommendation:** Acceptable for the current threat model.
 
 ---
 
-### Finding #8 — No server-side token revocation (Low)
+### Finding #8 — No server-side token revocation (Low–Medium)
 
-**File:** `services/vnm-api/src/routes/auth.js` line 79
+**File:** `services/vnm-api/src/routes/auth.js` line 89
 
 ```js
 fastify.post('/auth/logout', async (request, reply) => {
@@ -177,17 +170,19 @@ fastify.post('/auth/logout', async (request, reply) => {
 });
 ```
 
-The comment says "Placeholder for future server-side token invalidation." JWTs are stateless — once issued, they're valid until expiry (30 days by default). The `logout` endpoint only discards the token client-side.
+JWTs are stateless — once issued, they're valid until expiry (30 days by default). The `logout` endpoint only discards the token client-side.
 
-**Risk:** Low — if a token is leaked, it remains valid for up to 30 days. However, the single-user nature means there's no horizontal privilege escalation risk.
+**Risk:** Low–Medium with multi-user. If a token is leaked, it remains valid for up to 30 days. However, the impact of Finding #13 (stale roles) has been **resolved** — the auth middleware now verifies users against the database on every request, so deleted users and role changes take effect immediately (see Finding #13).
 
-**Recommendation:** For a single-user app, this is acceptable. If defense in depth is desired, rotate `jwtSecret` on password change (invalidating all existing tokens), or implement a token blacklist.
+Remaining risk: a user who logs out still has a technically valid token until it expires (cannot be server-side revoked). Since the app is self-hosted and the token must be stolen from `localStorage` (same-origin only), this is acceptable.
+
+**Recommendation:** Acceptable for the current threat model. If defense in depth is desired, implement a token blacklist or rotate `jwtSecret` on admin action.
 
 ---
 
 ### Finding #9 — vnm-builder runs as root (Low — Intentional)
 
-**File:** `compose.yml` line 67
+**File:** `compose.yml`
 
 ```yaml
 environment:
@@ -203,9 +198,9 @@ The builder container runs as root. The comment explains this is intentional bec
 
 ---
 
-### Finding #10 — SSRF via import-url (Low–Medium)
+### Finding #10 — SSRF via import-url (Low)
 
-**File:** `services/vnm-api/src/routes/import.js` line 413
+**File:** `services/vnm-api/src/routes/import.js`
 
 ```js
 const response = await fetch(url, {
@@ -216,7 +211,7 @@ const response = await fetch(url, {
 
 The `POST /library/import-url` endpoint accepts a user-supplied URL and makes an HTTP request from the server. It validates protocol (`http:` / `https:` only) but doesn't block internal network ranges.
 
-**Risk:** An authenticated user could request `http://vnm-builder:3002/build` or `http://169.254.169.254/latest/meta-data/` (cloud metadata). Since the app is self-hosted and single-user (the user is the admin), this is only a risk if the admin account is compromised.
+**Risk:** Previously Low–Medium when any authenticated user could trigger it. **Now reduced to Low** — the import endpoints are admin-only (enforced by the role middleware at `index.js`). Exploitation requires a compromised admin token.
 
 **Recommendation:** If hardening is desired, block RFC 1918 / link-local / loopback ranges:
 ```js
@@ -265,7 +260,93 @@ The `POST /api/v1/internal/client-error` endpoint accepts error reports from the
 - Log entries are tagged with `source: "client"` so they can be filtered/identified
 - Logs are structured JSON (not plaintext), so injected content can't break line parsing
 
-**Recommendation:** Acceptable for the current threat model. The rate limit and field truncation prevent meaningful abuse. If hardening is desired, add auth-token-in-body or move to a separate authenticated endpoint.
+**Recommendation:** Acceptable for the current threat model. The rate limit and field truncation prevent meaningful abuse.
+
+---
+
+### Finding #13 — Stale JWT role after user modification — ✅ RESOLVED
+
+**File:** `services/vnm-api/src/index.js` auth middleware (lines ~206–240)
+
+**Original issue:** The auth middleware read `decoded.role` from the JWT, which was set at sign-time and never re-validated against the database. This meant:
+- A deleted user could continue making API calls with their old token
+- A demoted user (admin→viewer) retained admin access until token expiry
+- A password-reset user's old token remained valid
+
+**Resolution:** The auth middleware now performs a **database lookup on every authenticated request**:
+
+```js
+const decoded = jwt.verify(token, fastify.jwtSecret);
+
+// Verify user still exists and get current role from database
+const dbUser = await fastify.prisma.user.findUnique({
+  where: { id: decoded.userId },
+  select: { id: true, role: true },
+});
+
+if (!dbUser) {
+  reply.code(401).send({ code: 'UNAUTHORIZED', message: 'User account no longer exists' });
+  return;
+}
+
+// Use database role (authoritative) instead of JWT role (potentially stale)
+request.user = { ...decoded, role: dbUser.role };
+```
+
+**Effects:**
+- Deleted users are immediately rejected (401)
+- Role changes take effect immediately (no waiting for token expiry)
+- Password resets don't need to invalidate tokens — the user record still exists with the new hash
+
+**Trade-off:** One extra `SELECT id, role FROM User WHERE id = ?` per authenticated request. For SQLite on a self-hosted single-server deployment, this adds negligible latency (<1ms).
+
+---
+
+### Finding #14 — userId format validation in user management — ✅ RESOLVED
+
+**File:** `services/vnm-api/src/routes/users.js`
+
+**Original issue:** The `userId` path parameter in `PATCH /users/:userId`, `DELETE /users/:userId`, and `POST /users/:userId/reset-password` was not validated for format. While Prisma handles invalid UUIDs gracefully (returns null → 404), explicit validation provides defense-in-depth.
+
+**Resolution:** Added UUID format validation via a shared `isInvalidUserId()` helper that checks against a UUID v4 regex and returns 400 with `INVALID_USER_ID` for malformed IDs:
+
+```js
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isInvalidUserId(userId, reply) {
+  if (!userId || !UUID_REGEX.test(userId)) {
+    reply.code(400).send({ code: 'INVALID_USER_ID', message: 'userId must be a valid UUID.' });
+    return true;
+  }
+  return false;
+}
+```
+
+---
+
+### Finding #15 — `RESET_ADMIN_PASSWORD` env var has no auto-disable (Low)
+
+**File:** `services/vnm-api/src/index.js` lines ~392–419
+
+If `RESET_ADMIN_PASSWORD=true` is left in the `.env` file after a password reset, every container restart will re-hash and overwrite the admin password from the env var — even if the admin changed their password through the UI.
+
+**Risk:** Low — self-hosted users control their own `.env`. The README and `.env.example` document removing the flag after use.
+
+**Mitigation in place:** The startup log clearly states `Admin password reset from VNM_ADMIN_PASSWORD (RESET_ADMIN_PASSWORD=true)`, so container logs would show the behavior.
+
+**Recommendation:** Acceptable. The documentation is clear. Further hardening could record when the password was last reset via env var and skip subsequent resets unless the env-var password value changes.
+
+---
+
+### Finding #16 — bcrypt DoS via login endpoint (Low — Mitigated)
+
+**File:** `services/vnm-api/src/routes/auth.js` lines 50, 61
+
+Every login attempt (including failures) triggers a `bcrypt.compare()` with cost factor 12 (~250ms per call). The dummy hash on line 50 ensures even non-existent usernames trigger the computation.
+
+**Risk:** Low — this is by design (prevents timing-based user enumeration). The existing rate limit of **5 attempts per minute** on `POST /auth/login` caps CPU cost at ~1.25 seconds/minute. Not exploitable at this rate.
+
+**Recommendation:** No action needed. Rate limiting is sufficient.
 
 ---
 
@@ -274,28 +355,36 @@ The `POST /api/v1/internal/client-error` endpoint accepts error reports from the
 | # | Finding | Severity | Action Needed |
 |---|---------|----------|---------------|
 | 1 | Token in localStorage | Low | Acceptable for self-hosted SPA |
-| 2 | Plaintext password comparison | Low | Acceptable — env var only, timing-safe |
+| ~~2~~ | ~~Plaintext password comparison~~ | ~~Low~~ | ✅ **Resolved** — bcrypt with cost 12 |
 | **3** | **Internal endpoints unauthenticated** | **Medium** | **Add shared secret for builder callbacks, or nginx block** |
 | 4 | Build log SSE unauthenticated | Low | Optional: token-in-query-param |
 | 5 | Cover images unauthenticated | Low | Acceptable for images |
 | ~~6~~ | ~~Shell injection risk in exec~~ | ~~Medium~~ | ✅ **Resolved** — switched to `execFileAsync` (no shell) |
 | 7 | CORS allows all origins | Low | Acceptable with Bearer tokens |
-| 8 | No server-side token revocation | Low | Optional: rotate secret on change |
-| 9 | Builder runs as root | Low | Intentional, isolated volumes (+`/data/logs` shared) |
-| **10** | **SSRF via import-url** | **Low–Medium** | **Optional: block internal ranges** |
+| 8 | No server-side token revocation | Low–Medium | Partially mitigated by Finding #13 fix; logout still client-only |
+| 9 | Builder runs as root | Low | Intentional, isolated volumes |
+| 10 | SSRF via import-url | Low | Reduced — now admin-only; optional: block internal ranges |
 | 11 | Nginx missing security headers | Low | Add standard headers |
 | 12 | Client error endpoint log injection | Low | Rate-limited + field-truncated; acceptable |
+| ~~13~~ | ~~Stale JWT role after user modification~~ | ~~Medium~~ | ✅ **Resolved** — DB lookup per request |
+| ~~14~~ | ~~No userId format validation~~ | ~~Low~~ | ✅ **Resolved** — UUID regex validation added |
+| 15 | `RESET_ADMIN_PASSWORD` no auto-disable | Low | Acceptable — well-documented |
+| 16 | bcrypt DoS via login | Low | Mitigated by rate limiting |
 
 ---
 
 ## What's Already Done Right
 
+- **bcrypt password hashing** — cost factor 12, dummy hash on user-not-found prevents timing-based enumeration
 - **JWT secret:** Cryptographically random, auto-generated, persisted with restrictive file permissions (`0o600`)
-- **Timing-safe comparison** for credentials (`timingSafeEqual`)
+- **Role-based access control** — two roles (`admin` / `viewer`) enforced in auth middleware with DB-verified role on every request
+- **Admin safety guards** — cannot delete yourself, cannot demote/delete the last admin
 - **Rate limiting** on login (5 per minute via `@fastify/rate-limit`) and on client error reporting (100 per minute)
 - **Login failure logging** with IP address
 - **JWT expiration** enforced (configurable TTL, default 30 days)
+- **DB-verified user on every request** — deleted users immediately rejected, role changes take effect instantly
 - **Password required at startup** — hard fail with `process.exit(1)` if missing
+- **User input validation** — username regex (`[a-zA-Z0-9_]{3,32}`), password minimum length (8), role whitelist, UUID format checks on userId params
 - **Docker network isolation** — internal bridge network, only nginx exposes a port
 - **Docker log rotation** — all containers configured with `json-file` driver, `max-size: 10m`, `max-file: 3` to prevent disk exhaustion
 - **Resource limits** on the builder container (`mem_limit: 16g`, `cpus: 8`)
@@ -309,4 +398,8 @@ The `POST /api/v1/internal/client-error` endpoint accepts error reports from the
 - **Sanitised folder names** on import (strips path traversal and dangerous characters)
 - **Shell-free command execution** — all external commands (`unzip`, `tar`, `7z`, `chmod`, `unrpa`) use `execFile` (no shell) to prevent injection
 - **Game ID validation** — 32-character hex string check on all ID parameters
+- **Idempotent favorites** — upsert prevents duplicate entries; deleteMany is safe on non-existent rows
+- **Cascade deletes** — deleting a user cascades favorites; deleting a game cascades all users' favorites
+- **Admin seed idempotency** — seed only runs when `adminCount === 0`, safe for repeated restarts
+- **Per-user data isolation** — favorites are scoped to `userId` in every query; no cross-user data leakage
 - **Graceful shutdown** with proper resource cleanup

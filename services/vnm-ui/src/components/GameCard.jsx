@@ -7,7 +7,7 @@ import { generateGradient, formatRating, getRatingColor, truncate } from '../lib
  *
  * @param {{ game: object, onClick: (game: object) => void, onHide?: (game: object) => void, onFavorite?: (game: object) => void }} props
  */
-export default function GameCard({ game, onClick, onHide, onFavorite }) {
+export default function GameCard({ game, onClick, onHide, onFavorite, isAdmin = true }) {
   const [hovered, setHovered] = useState(false);
 
   const title = game.vndbTitle || game.extractedTitle || 'Unknown';
@@ -124,8 +124,8 @@ export default function GameCard({ game, onClick, onHide, onFavorite }) {
           )}
         </div>
 
-        {/* Hide/Unhide button — bottom-right of image area, visible on hover */}
-        {onHide && (
+        {/* Hide/Unhide button — bottom-right of image area, visible on hover (admin only) */}
+        {isAdmin && onHide && (
           <button
             onClick={(e) => {
               e.stopPropagation();

@@ -80,12 +80,16 @@ export default function useLibrary() {
   }, [fetchGames]);
 
   const favoriteGame = useCallback(async (gameId, favorite = true) => {
+    // Optimistic update first
+    setGames((prev) =>
+      prev.map((g) => (g.id === gameId ? { ...g, favorite } : g))
+    );
     try {
-      await api.patch(`/library/${gameId}`, { favorite });
-      // Optimistically update local state
-      setGames((prev) =>
-        prev.map((g) => (g.id === gameId ? { ...g, favorite } : g))
-      );
+      if (favorite) {
+        await api.post(`/favorites/${gameId}`);
+      } else {
+        await api.delete(`/favorites/${gameId}`);
+      }
     } catch (err) {
       // Revert on error — refetch
       await fetchGames();

@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Custom web presplash image — copied over the SDK default at container start
-COPY web-presplash.jpg /app/web-presplash.jpg
+COPY web-presplash.webp /app/web-presplash.webp
 
 RUN mkdir -p /web-builds /games /renpy-sdk
 

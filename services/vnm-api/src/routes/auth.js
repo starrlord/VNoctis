@@ -1,10 +1,18 @@
 import jwt from 'jsonwebtoken';
-import { timingSafeEqual } from 'node:crypto';
+import bcrypt from 'bcrypt';
+
+/**
+ * Dummy hash used for timing-safe comparison when a user is not found.
+ * Prevents timing-based user enumeration by ensuring bcrypt.compare()
+ * always runs regardless of whether the username exists.
+ */
+const DUMMY_HASH = '$2b$12$K4v1Qx0YpSGz1tQ0ZzVxQeJfGqK8vLzHxMzHn6b4C5pP7q8Rr0Wmu';
 
 /**
  * Authentication routes plugin.
  *
  * Provides login, logout, and session inspection endpoints.
+ * Uses database-backed multi-user authentication with bcrypt.
  *
  * @param {import('fastify').FastifyInstance} fastify
  * @param {object} opts
@@ -13,7 +21,7 @@ export default async function authRoutes(fastify, opts) {
   /**
    * POST /auth/login
    *
-   * Authenticates the admin user and returns a signed JWT.
+   * Authenticates a user against the database and returns a signed JWT.
    */
   fastify.post('/auth/login', {
     config: {
@@ -33,24 +41,26 @@ export default async function authRoutes(fastify, opts) {
       return;
     }
 
-    const expectedUser = process.env.VNM_ADMIN_USER || 'admin';
-    const expectedPass = process.env.VNM_ADMIN_PASSWORD;
+    const user = await fastify.prisma.user.findUnique({
+      where: { username: String(username) },
+    });
 
-    // Constant-time comparison for both username and password
-    const userBuf = Buffer.from(String(username));
-    const expectedUserBuf = Buffer.from(expectedUser);
-    const passBuf = Buffer.from(String(password));
-    const expectedPassBuf = Buffer.from(expectedPass);
+    if (!user) {
+      // Perform a dummy compare to prevent timing-based user enumeration
+      await bcrypt.compare(String(password), DUMMY_HASH);
 
-    const usernameMatch =
-      userBuf.length === expectedUserBuf.length &&
-      timingSafeEqual(userBuf, expectedUserBuf);
+      const ip = request.ip || request.headers['x-forwarded-for'] || 'unknown';
+      request.log.warn({ ip }, 'Failed login attempt');
+      reply.code(401).send({
+        code: 'UNAUTHORIZED',
+        message: 'Invalid username or password',
+      });
+      return;
+    }
 
-    const passwordMatch =
-      passBuf.length === expectedPassBuf.length &&
-      timingSafeEqual(passBuf, expectedPassBuf);
+    const passwordMatch = await bcrypt.compare(String(password), user.passwordHash);
 
-    if (!usernameMatch || !passwordMatch) {
+    if (!passwordMatch) {
       const ip = request.ip || request.headers['x-forwarded-for'] || 'unknown';
       request.log.warn({ ip }, 'Failed login attempt');
       reply.code(401).send({
@@ -62,7 +72,7 @@ export default async function authRoutes(fastify, opts) {
 
     const ttlDays = parseInt(process.env.VNM_SESSION_TTL_DAYS, 10) || 30;
     const token = jwt.sign(
-      { username: expectedUser },
+      { userId: user.id, username: user.username, role: user.role },
       fastify.jwtSecret,
       { expiresIn: `${ttlDays}d` }
     );
@@ -98,7 +108,11 @@ export default async function authRoutes(fastify, opts) {
     const token = authHeader.slice(7);
     try {
       const decoded = jwt.verify(token, fastify.jwtSecret);
-      return { username: decoded.username };
+      return {
+        userId: decoded.userId,
+        username: decoded.username,
+        role: decoded.role,
+      };
     } catch (err) {
       reply.code(401).send({
         code: 'UNAUTHORIZED',
