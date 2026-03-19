@@ -73,6 +73,13 @@ if [ -f /app/web-presplash.webp ] && [ -d /renpy-sdk/web ]; then
     echo "[vnm-builder] Custom web-presplash.webp applied"
 fi
 
+# ── Copy custom index page ────────────────────────────────
+# Replaces the default Ren'Py index.html with a custom branded one.
+if [ -f /app/index_mod.html ] && [ -d /renpy-sdk/web ]; then
+    cp /app/index_mod.html /renpy-sdk/web/index.html
+    echo "[vnm-builder] Custom index.html applied (from index_mod.html)"
+fi
+
 # ── Ensure SDK launcher is executable ──────────────────────
 if [ -f /renpy-sdk/renpy.sh ]; then
     chmod +x /renpy-sdk/renpy.sh

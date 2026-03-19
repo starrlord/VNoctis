@@ -19,7 +19,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
  *   isFullscreen: boolean,
  *   visible: boolean,
  *   volume: number,
+ *   muted?: boolean,
  *   onVolumeChange: (v: number) => void,
+ *   onToggleMute?: () => void,
  *   onToggleFullscreen: () => void,
  *   showFullscreenButton?: boolean,
  * }} props
@@ -30,7 +32,9 @@ export default function PlayerChrome({
   isFullscreen,
   visible,
   volume,
+  muted = false,
   onVolumeChange,
+  onToggleMute,
   onToggleFullscreen,
   showFullscreenButton = true,
 }) {
@@ -129,44 +133,59 @@ export default function PlayerChrome({
 
       {/* ---- Right: Volume + Fullscreen ---- */}
       <div className="flex items-center gap-3">
-        {/* Volume slider */}
-        <label className="flex items-center gap-1.5 cursor-pointer group">
-          {/* Speaker icon */}
-          <svg
-            className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
+        {/* Mute toggle + Volume slider */}
+        <div className="flex items-center gap-1.5">
+          {/* Mute / unmute button */}
+          <button
+            onClick={onToggleMute}
+            className={`p-1 rounded-md min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
+              muted
+                ? 'text-purple-400 hover:text-purple-300'
+                : 'text-gray-400 hover:text-white'
+            }`}
+            aria-label={muted ? 'Unmute' : 'Mute'}
           >
-            {volume === 0 ? (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M17.25 9.75 19.5 12m0 0 2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6 4.72-3.72a.75.75 0 0 1 1.28.53v14.88a.75.75 0 0 1-1.28.53l-4.72-3.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"
-              />
-            ) : (
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-3.72a.75.75 0 0 1 1.28.53v14.88a.75.75 0 0 1-1.28.53l-4.72-3.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"
-              />
-            )}
-          </svg>
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+            >
+              {muted || volume === 0 ? (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M17.25 9.75 19.5 12m0 0 2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6 4.72-3.72a.75.75 0 0 1 1.28.53v14.88a.75.75 0 0 1-1.28.53l-4.72-3.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"
+                />
+              ) : (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-3.72a.75.75 0 0 1 1.28.53v14.88a.75.75 0 0 1-1.28.53l-4.72-3.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"
+                />
+              )}
+            </svg>
+          </button>
+          {/* Volume slider */}
           <input
             type="range"
             min={0}
             max={100}
-            value={volume}
-            onChange={(e) => onVolumeChange(Number(e.target.value))}
-            className="w-20 h-1 accent-blue-500 bg-gray-600 rounded-full appearance-none cursor-pointer
+            value={muted ? 0 : volume}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              onVolumeChange(v);
+              if (muted && v > 0 && onToggleMute) onToggleMute();
+            }}
+            className="w-20 h-1 accent-purple-500 bg-gray-600 rounded-full appearance-none cursor-pointer
                        [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
-                       [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-400
+                       [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-400
                        [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3
-                       [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-blue-400 [&::-moz-range-thumb]:border-0"
+                       [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-purple-400 [&::-moz-range-thumb]:border-0"
             aria-label="Volume"
           />
-        </label>
+        </div>
 
         {/* Fullscreen toggle — hidden on iOS where the API is unsupported */}
         {showFullscreenButton && (

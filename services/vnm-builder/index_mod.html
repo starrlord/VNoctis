@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>Ren'Py Web Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json" crossorigin="use-credentials" />
+  <link rel="icon" href="icons/icon-72x72.png"   sizes="72x72"   type="image/png" />
+  <link rel="icon" href="icons/icon-96x96.png"   sizes="96x96"   type="image/png" />
+  <link rel="icon" href="icons/icon-128x128.png" sizes="128x128" type="image/png" />
+  <link rel="icon" href="icons/icon-144x144.png" sizes="144x144" type="image/png" />
+  <link rel="icon" href="icons/icon-152x152.png" sizes="152x152" type="image/png" />
+  <link rel="icon" href="icons/icon-192x192.png" sizes="192x192" type="image/png" />
+  <link rel="icon" href="icons/icon-384x384.png" sizes="384x384" type="image/png" />
+  <link rel="icon" href="icons/icon-512x512.png" sizes="512x512" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-72x72.png"   sizes="72x72"   type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-96x96.png"   sizes="96x96"   type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-128x128.png" sizes="128x128" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-144x144.png" sizes="144x144" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-152x152.png" sizes="152x152" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-192x192.png" sizes="192x192" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-384x384.png" sizes="384x384" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/icon-512x512.png" sizes="512x512" type="image/png" />
+  <meta name="theme-color" content="#0d0d14" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg:           #0d0d14;
+      --surface:      #14141f;
+      --surface-2:    #1c1c2e;
+      --border:       rgba(139, 92, 246, 0.20);
+      --border-subtle: rgba(139, 92, 246, 0.10);
+      --purple:       #8b5cf6;
+      --purple-light: #a78bfa;
+      --purple-glow:  rgba(139, 92, 246, 0.22);
+      --purple-dim:   rgba(139, 92, 246, 0.12);
+      --text:         #ededf5;
+      --text-dim:     rgba(237, 237, 245, 0.62);
+      --text-muted:   rgba(237, 237, 245, 0.35);
+      --error:        #f87171;
+      --font-sans:    'DM Sans',  system-ui, sans-serif;
+      --font-mono:    'DM Mono',  'Courier New', monospace;
+      --radius:       10px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { background: var(--bg); font-family: var(--font-sans); }
+    body, html { overscroll-behavior: none; }
+
+    /* ── Canvas & overlay ─────────────────────────────── */
+    #canvas, #overlayDiv {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%; border: 0 none;
+    }
+    #canvas { background: #000; }
+
+    /* ── Visibility (renpy-pre.js hooks) ──────────────── */
+    .visible { visibility: visible; opacity: 1; transition: opacity .1s linear; }
+    .hidden  { visibility: hidden;  opacity: 0; transition: visibility 0s .25s, opacity .25s linear; }
+
+    /* ── Presplash ─────────────────────────────────────── */
+    #presplash {
+      position: absolute; top: 0; left: 0;
+      display: block; width: 100%; height: 100%;
+      object-fit: contain; z-index: 10;
+    }
+
+    /* ── Starfield ─────────────────────────────────────── */
+    #starfield { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+    /* ════════════════════════════════════════════════════
+       STATUS PANEL  — compact single-row + slim bar
+    ════════════════════════════════════════════════════ */
+    #statusDiv {
+      position: absolute; bottom: 16px;
+      left: 50%; transform: translateX(-50%);
+      width: min(560px, calc(100% - 48px));
+      z-index: 20;
+      background: rgba(13,13,20,0.82);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow:
+        0 0 0 1px rgba(139,92,246,0.06),
+        0 8px 32px rgba(0,0,0,0.5),
+        0 0 24px rgba(139,92,246,0.06);
+      padding: 9px 16px 11px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+
+    /* single inline row: dot · label · text · spacer · pct */
+    #statusRow {
+      display: flex; align-items: center; gap: 9px;
+      min-height: 20px;
+    }
+
+    #statusDot {
+      width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+      background: var(--purple); box-shadow: 0 0 6px var(--purple);
+      animation: dotPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes dotPulse {
+      0%,100% { opacity:1;   box-shadow: 0 0 6px var(--purple); }
+      50%      { opacity:0.45; box-shadow: 0 0 10px var(--purple-light); }
+    }
+
+    #statusLabel {
+      font-family: var(--font-mono); font-size: 10.5px;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--purple-light); white-space: nowrap; flex-shrink: 0;
+    }
+
+    /* thin separator pipe */
+    #statusSep {
+      width: 1px; height: 12px; flex-shrink: 0;
+      background: var(--border); border-radius: 1px;
+    }
+
+    #statusTextDiv {
+      flex: 1; overflow: hidden;
+      white-space: nowrap; text-overflow: ellipsis;
+      color: var(--text-dim); font-family: var(--font-mono);
+      font-size: 12.5px; line-height: 1; letter-spacing: 0.01em;
+    }
+
+    #statusPct {
+      font-family: var(--font-mono); font-size: 11px; font-weight: 400;
+      color: var(--text); letter-spacing: 0.05em;
+      white-space: nowrap; flex-shrink: 0; display: none;
+    }
+
+    /* hide native progress */
+    #statusProgress { display: none !important; }
+
+    /* slim progress bar */
+    #progressWrap { display: none; }
+    #progressWrap.active { display: block; }
+
+    #progressTrack {
+      width: 100%; height: 2px;
+      background: var(--border-subtle); border-radius: 99px;
+      overflow: visible; position: relative;
+    }
+    #progressFill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--purple) 0%, var(--purple-light) 100%);
+      border-radius: 99px; transition: width 0.1s ease-out; position: relative;
+    }
+    #progressFill::after {
+      content: '';
+      position: absolute; top: 50%; right: -3px; transform: translateY(-50%);
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--purple-light);
+      box-shadow: 0 0 8px 2px rgba(167,139,250,0.7);
+    }
+
+    /* error state */
+    #statusDiv.has-error #statusDot   { background: var(--error); box-shadow: 0 0 6px var(--error); animation: none; }
+    #statusDiv.has-error #statusLabel { color: var(--error); }
+    #statusDiv.has-error #statusTextDiv { color: rgba(248,113,113,0.80); }
+
+    /* ════════════════════════════════════════════════════
+       CONTEXT MENU  — proper panel with icons
+    ════════════════════════════════════════════════════ */
+    #ContextContainer {
+      position: absolute; left: 0; top: 0; z-index: 30;
+    }
+
+    /* the toggle button */
+    #ContextButton {
+      width: 38px; height: 38px;
+      display: flex; align-items: center; justify-content: center;
+      text-decoration: none; cursor: pointer;
+      user-select: none; -moz-user-select: none;
+      color: var(--text-muted);
+      font-size: 18px; line-height: 1;
+      transition: color 0.15s, background 0.15s;
+      border-radius: 0 0 var(--radius) 0;
+    }
+    #ContextButton:hover, #ContextButton:focus {
+      outline: none;
+      color: var(--purple-light);
+      background: rgba(139,92,246,0.08);
+    }
+
+    /* dropdown panel */
+    #ContextMenu {
+      position: absolute; top: 38px; left: 0;
+      width: 232px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      box-shadow:
+        0 16px 48px rgba(0,0,0,0.55),
+        0 0 0 1px rgba(139,92,246,0.04);
+      overflow: hidden;
+      /* animate open */
+      transform-origin: top left;
+      animation: menuOpen 0.15s ease forwards;
+    }
+    @keyframes menuOpen {
+      from { opacity: 0; transform: scale(0.97) translateY(-4px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    /* section header */
+    .menu-section-header {
+      padding: 10px 14px 6px;
+      font-family: var(--font-mono);
+      font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* divider */
+    .menu-divider {
+      height: 1px; margin: 4px 0;
+      background: var(--border-subtle);
+    }
+
+    /* menu items — left-align with icon */
+    #ContextMenu a {
+      text-decoration: none;
+      display: flex; align-items: center; gap: 11px;
+      padding: 0 14px;
+      height: 40px;
+      color: var(--text-dim);
+      font-family: var(--font-sans);
+      font-size: 13.5px; font-weight: 400; letter-spacing: 0.01em;
+      background: transparent;
+      border: none;
+      transition: background 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+    #ContextMenu a:hover {
+      background: var(--purple-dim); color: var(--text);
+    }
+    #ContextMenu a:hover .menu-icon { color: var(--purple-light); }
+
+    .menu-icon {
+      width: 16px; height: 16px;
+      flex-shrink: 0; color: var(--text-muted);
+      transition: color 0.1s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .menu-icon svg { width: 15px; height: 15px; }
+
+    /* "Powered by" footer link — smaller, muted */
+    #ContextMenu a.menu-footer {
+      height: 34px; font-size: 11.5px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border-subtle);
+      margin-top: 2px;
+    }
+    #ContextMenu a.menu-footer:hover { color: var(--text-dim); background: transparent; }
+
+    /* ── Input overlay ─────────────────────────────────── */
+    #inputDiv {
+      background: var(--surface);
+      border: 1px solid var(--border); border-top: none;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      width: 52%; min-width: 320px; margin: auto;
+      padding: 16px 20px 20px;
+      position: absolute; top: 0; left: 0; right: 0;
+      border-radius: 0 0 var(--radius) var(--radius);
+    }
+    #inputPrompt {
+      color: var(--text); font-size: 14px; font-weight: 400;
+      line-height: 1.5; margin-bottom: 10px; margin-top: 4px;
+    }
+    #inputText {
+      width: 100%; font-family: var(--font-mono); font-size: 14px;
+      padding: 9px 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 3px);
+      color: var(--text); outline: none; letter-spacing: 0.02em;
+      caret-color: var(--purple);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    #inputText:focus {
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px var(--purple-glow);
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="starfield"></canvas>
+
+  <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+  <div id="overlayDiv"></div>
+
+  <img id="presplash" src="web-presplash.webp">
+
+  <div id="ContextContainer">
+    <!-- hamburger toggle -->
+    <a id="ContextButton" role="button" aria-label="Menu">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="3.5" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+        <rect x="2" y="7.25" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+        <rect x="2" y="11" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+      </svg>
+    </a>
+
+    <div id="ContextMenu" style="display: none;">
+      <input id="ID_SavegamesImport" type="file" onchange="onSavegamesImport(this)" accept="application/zip" style="display:none">
+
+      <div class="menu-section-header">Saves</div>
+
+      <a href="javascript:document.getElementById('ID_SavegamesImport').click();">
+        <span class="menu-icon">
+          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M3 11v1.5a.5.5 0 00.5.5h9a.5.5 0 00.5-.5V11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </span>
+        Import Saves
+      </a>
+
+      <a href="javascript:onSavegamesExport();">
+        <span class="menu-icon">
+          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 10V2M5 5L8 2l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M3 11v1.5a.5.5 0 00.5.5h9a.5.5 0 00.5-.5V11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </span>
+        Export Saves
+      </a>
+
+      <div class="menu-divider"></div>
+      <div class="menu-section-header">Debug</div>
+
+      <a href="javascript:FSDownload('/log.txt', 'text/plain');">
+        <span class="menu-icon">
+          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2.5" y="1.5" width="11" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+            <path d="M5 5.5h6M5 8h6M5 10.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </span>
+        Download Log
+      </a>
+
+      <a href="https://www.renpy.org/" target="_blank" class="menu-footer">
+        <span class="menu-icon">
+          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M8 2.5c-1.5 2-1.5 9 0 11M8 2.5c1.5 2 1.5 9 0 11M2.5 8h11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        Powered by Ren'Py
+      </a>
+    </div>
+  </div>
+
+  <!-- Status panel — IDs unchanged for renpy-pre.js compatibility -->
+  <div id="statusDiv" class="hidden">
+    <div id="statusRow">
+      <div id="statusDot"></div>
+      <span id="statusLabel">Initializing</span>
+      <div id="statusSep"></div>
+      <div id="statusTextDiv"></div>
+      <span id="statusPct"></span>
+    </div>
+    <div id="progressWrap">
+      <div id="progressTrack">
+        <div id="progressFill"></div>
+      </div>
+    </div>
+    <!-- native progress: hidden via CSS, patched via JS below -->
+    <progress id="statusProgress" value="0" max="100"></progress>
+  </div>
+
+  <div id="inputDiv" class="hidden">
+    <form id="inputForm">
+      <div id="inputPrompt"></div>
+      <input id="inputText" type="text">
+    </form>
+  </div>
+
+  <script>
+    /* ── Starfield ──────────────────────────────────────── */
+    (function () {
+      const c   = document.getElementById('starfield');
+      const ctx = c.getContext('2d');
+      let W, H, stars = [];
+
+      function resize() { W = c.width = innerWidth; H = c.height = innerHeight; }
+
+      function seed() {
+        stars = Array.from({ length: 200 }, () => ({
+          x:  Math.random() * W, y:  Math.random() * H,
+          r:  Math.random() * 1.1 + 0.15,
+          a:  Math.random(),
+          da: (Math.random() * 0.0025 + 0.0008) * (Math.random() < .5 ? 1 : -1),
+          vx: (Math.random() - .5) * 0.05,
+          vy: (Math.random() - .5) * 0.05,
+        }));
+      }
+
+      function frame() {
+        ctx.clearRect(0, 0, W, H);
+        for (const s of stars) {
+          s.a += s.da;
+          if (s.a < 0.04 || s.a > 0.95) s.da *= -1;
+          s.x = (s.x + s.vx + W) % W;
+          s.y = (s.y + s.vy + H) % H;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(210, 200, 255, ${s.a * 0.65})`;
+          ctx.fill();
+        }
+        requestAnimationFrame(frame);
+      }
+
+      resize(); seed(); frame();
+      window.addEventListener('resize', () => { resize(); seed(); });
+    })();
+
+    /* ── Progress interception ──────────────────────────── */
+    (function () {
+      const fill    = document.getElementById('progressFill');
+      const wrap    = document.getElementById('progressWrap');
+      const pctEl   = document.getElementById('statusPct');
+      const labelEl = document.getElementById('statusLabel');
+      const statusD = document.getElementById('statusDiv');
+      const textDiv = document.getElementById('statusTextDiv');
+      const bar     = document.getElementById('statusProgress');
+
+      let _v = 0, _m = 100;
+
+      function syncBar() {
+        const p = _m > 0 ? Math.min(100, Math.round((_v / _m) * 100)) : 0;
+        fill.style.width    = p + '%';
+        pctEl.style.display = 'block';
+        pctEl.textContent   = p + '%';
+      }
+
+      function refreshLabel() {
+        const t = textDiv.textContent.toLowerCase();
+        if      (t.includes('game data')) labelEl.textContent = 'Game Data';
+        else if (t.includes('engine'))    labelEl.textContent = 'Engine';
+        else if (t.includes('cache'))     labelEl.textContent = 'Cache';
+        else if (t.length > 0)            labelEl.textContent = 'Loading';
+        if (t.includes('error') || t.includes('could not') || t.includes('aborted')) {
+          statusD.classList.add('has-error');
+          labelEl.textContent = 'Error';
+        }
+      }
+
+      Object.defineProperty(bar, 'value', {
+        get: () => _v, set(v) { _v = parseFloat(v)||0; syncBar(); }, configurable: true,
+      });
+      Object.defineProperty(bar, 'max', {
+        get: () => _m, set(v) { _m = parseFloat(v)||100; syncBar(); }, configurable: true,
+      });
+
+      const style = bar.style;
+      const d = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, 'display');
+      Object.defineProperty(style, 'display', {
+        get() { return d && d.get ? d.get.call(style) : ''; },
+        set(v) {
+          if (d && d.set) d.set.call(style, v);
+          if (v === 'block') {
+            wrap.classList.add('active');
+          } else {
+            wrap.classList.remove('active');
+            pctEl.style.display = 'none';
+            _v = 0; _m = 100; fill.style.width = '0%';
+          }
+        },
+        configurable: true,
+      });
+
+      new MutationObserver(refreshLabel).observe(textDiv, {
+        childList: true, subtree: true, characterData: true,
+      });
+    })();
+
+    /* ── Bootstrap ──────────────────────────────────────── */
+    window.gameZipURL = 'game.zip';
+    if (navigator.serviceWorker && !navigator.serviceWorker.controller) {
+      navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'all' });
+    }
+  </script>
+
+  <script src="renpy-pre.js"></script>
+  <script async type="text/javascript" src="renpy.js"></script>
+</body>
+</html>

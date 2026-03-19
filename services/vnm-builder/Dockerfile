@@ -14,6 +14,8 @@ COPY . .
 
 # Custom web presplash image — copied over the SDK default at container start
 COPY web-presplash.webp /app/web-presplash.webp
+# Custom index page — replaces the SDK default index.html at container start
+COPY index_mod.html /app/index_mod.html
 
 RUN mkdir -p /web-builds /games /renpy-sdk
 
