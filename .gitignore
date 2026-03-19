@@ -32,5 +32,7 @@ Thumbs.db
 
 # Docker volumes (local dev)
 data/
+
+#Misc
 build-and-push.sh
-build-and-push.sh
+build-and-push.ps1
