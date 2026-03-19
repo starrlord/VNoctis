@@ -19,7 +19,7 @@ import {
  *
  * @param {{ gameId: string, onClose: () => void, onDeleted?: () => void, onHide?: (game: object) => void, onFavorite?: (game: object) => void, onTagClick?: (tagName: string) => void }} props
  */
-export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, onFavorite, onTagClick, isAdmin = true }) {
+export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, onFavorite, onPublish, onUnpublish, onTagClick, isAdmin = true, r2Mode = false }) {
   const navigate = useNavigate();
   const [game, setGame] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -390,6 +390,33 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                         {isBuilt ? '🔨 Rebuild' : '🔨 Build'}
                       </button>
                     )
+                  )}
+                  {/* Publish / Republish button — admin + R2 mode + game is built */}
+                  {isAdmin && r2Mode && isBuilt && onPublish && (
+                    <button
+                      onClick={() => { onClose(); onPublish(game); }}
+                      disabled={game.publishStatus === 'publishing'}
+                      className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors duration-200 text-sm flex items-center gap-1.5"
+                      title={game.publishStatus === 'published' ? 'Republish to R2' : 'Publish to R2'}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" />
+                      </svg>
+                      {game.publishStatus === 'published' ? 'Republish' : 'Publish to R2'}
+                    </button>
+                  )}
+                  {/* Unpublish button — only shown when currently published */}
+                  {isAdmin && r2Mode && game.publishStatus === 'published' && onUnpublish && (
+                    <button
+                      onClick={() => { onClose(); onUnpublish(game); }}
+                      className="px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg transition-colors duration-200 text-sm flex items-center gap-1.5"
+                      title="Remove from R2 and gallery"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75 14.25 12m0 0 2.25 2.25M14.25 12l2.25-2.25M14.25 12 12 14.25m-2.58 4.92-6.374-6.375a1.125 1.125 0 0 1 0-1.59L9.42 4.83c.21-.211.497-.33.795-.33H19.5a2.25 2.25 0 0 1 2.25 2.25v10.5a2.25 2.25 0 0 1-2.25 2.25h-9.284c-.298 0-.585-.119-.795-.33Z" />
+                      </svg>
+                      Unpublish
+                    </button>
                   )}
                   {isAdmin && (
                     <button

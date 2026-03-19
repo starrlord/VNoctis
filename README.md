@@ -54,6 +54,7 @@
 - **User Management Panel** — Admin-only page for managing user accounts: create users with username/password/role, change roles (admin ↔ viewer), reset passwords, and delete accounts with cascading favorite cleanup; safety guards prevent deleting yourself or demoting the last admin
 - **Progressive Downloads** — Automatically generates `progressive_download.txt` rules so GUI images load upfront while game art, music, and voice stream on demand — existing rules in a game directory are preserved
 - **Custom Loading Screen** — Branded web presplash image automatically replaces the default Ren'Py loading screen in all web builds
+- **Cloudflare R2 Publishing** — One-click publish of built web games to Cloudflare R2 object storage with real-time SSE progress streaming, automatic static gallery generation (self-contained HTML with integrated in-browser player), publish status badges on all cards, per-game unpublish, and an admin settings modal for credentials (AES-256-GCM encrypted at rest)
 - **Docker-Native** — Single compose stack with health checks, resource limits, network isolation, and named volumes
 
 ---
@@ -190,6 +191,14 @@ ${VNM_ROOT}/
 | `COMPRESS_WEBP_QUALITY` | `80` | WebP quality target (0–100) |
 | `COMPRESS_WORKERS` | `0` | Parallel compression workers. `0` = auto (all available CPU cores) |
 
+### Cloudflare R2 Publishing
+
+| Variable | Default | Description |
+|---|---|---|
+| `VNM_R2_MODE` | `false` | Set to `true` to enable Cloudflare R2 publishing mode. On first start in R2 mode, `vnm.db` is copied to `vnm-r2.db` (the base database is never modified). All R2 tables and columns are applied to `vnm-r2.db` only. R2 credentials are configured at runtime via the admin UI (R2 settings modal in the navigation bar). |
+
+> **Note:** R2 credentials (account ID, access key ID, secret, bucket name, public URL) are stored in the database at runtime via the admin settings page — they are **not** environment variables. The secret access key is encrypted at rest using AES-256-GCM.
+
 ### General
 
 | Variable | Default | Description |
@@ -199,6 +208,79 @@ ${VNM_ROOT}/
 | `TZ` | `America/Chicago` | Container timezone |
 | `PUID` | `99` | User ID for file permission mapping on bind mounts |
 | `PGID` | `100` | Group ID for file permission mapping on bind mounts |
+
+---
+
+## ☁️ Cloudflare R2 Publishing
+
+VNoctis Manager can publish built web games to [Cloudflare R2](https://developers.cloudflare.com/r2/) — Cloudflare's S3-compatible object storage — making games publicly accessible without needing to serve them from the manager itself. A self-contained static gallery page (`index.html`) is automatically regenerated whenever games are published or unpublished.
+
+### Setup
+
+1. **Enable R2 mode** — add `VNM_R2_MODE=true` to your `.env` and restart the API container. On first start, `vnm.db` is copied to `vnm-r2.db`; the original database is never modified.
+
+2. **Create a Cloudflare R2 bucket** in the Cloudflare dashboard with public access enabled (set a custom domain or use the bucket's `r2.dev` subdomain).
+
+3. **Create an R2 API token** with _Object Read & Write_ permissions scoped to your bucket.
+
+4. **Configure credentials in VNoctis Manager** — log in as admin, click the **R2** button in the navigation bar (only visible in R2 mode) to open the settings modal, and fill in:
+   - **Account ID** — from the Cloudflare dashboard
+   - **Access Key ID** — from the R2 API token
+   - **Secret Access Key** — from the R2 API token (encrypted at rest with AES-256-GCM)
+   - **Bucket Name** — the R2 bucket name
+   - **Public URL** — the base URL for your bucket (e.g., `https://vn.example.com`)
+
+5. **Test the connection** — click **Test Connection** to verify credentials and bucket access before saving.
+
+### Publishing a Game
+
+Once credentials are saved, any fully-built game can be published:
+
+- **From the Library** — open the game detail modal and click **Publish to R2** (cloud upload icon)
+- **From the Gallery** — hover a game card and click the upload icon, or open the detail modal
+
+A progress modal streams real-time upload progress. On completion, a **View Published** link opens the public gallery in a new tab.
+
+### What Gets Uploaded
+
+For each game, VNoctis Manager uploads the entire web build to `{bucket}/{gameId}/`:
+
+```
+{bucket}/
+├── {gameId}/          # Web build files
+│   ├── index.html
+│   ├── game.data
+│   ├── game.js
+│   ├── game.wasm
+│   └── ...
+├── gallery.json       # Gallery metadata (auto-regenerated)
+└── index.html         # Static gallery page (auto-regenerated)
+```
+
+The **static gallery** (`index.html`) is a self-contained single-file page with embedded CSS and vanilla JS. It supports searching, sorting, and opening a game detail modal with a **Play** button that launches the game in a full-screen iframe player with a top navigation bar. The player includes a **Library** button to return to the gallery — no browser back button needed.
+
+### Publish Status
+
+Games display their R2 publish status across the UI:
+
+| Badge | Meaning |
+|---|---|
+| ✓ **R2** (green) | Published and accessible |
+| ↑ **Uploading** (pulsing yellow) | Publish in progress |
+| ○ **Unpublished** (gray) | Built but not published |
+
+### Unpublishing
+
+Open the game detail modal and click **Unpublish** — this deletes all game files from R2 under `{bucket}/{gameId}/` and regenerates the static gallery without the unpublished game.
+
+### Future Enhancements
+
+1. **Batch Publishing** — Publish multiple games at once
+2. **CDN Purge** — Invalidate Cloudflare cache after publish
+3. **Custom Gallery Themes** — Allow customizing gallery appearance
+4. **Publish Scheduling** — Schedule publishes for specific times
+5. **Access Control** — Password-protect the static gallery
+6. **Analytics** — Track game plays via Cloudflare Analytics
 
 ---
 
@@ -464,6 +546,24 @@ All endpoints are prefixed with `/api/v1` and proxied through Nginx.
 | `DELETE` | `/build/:jobId` | admin | Cancel a queued or in-progress build |
 | `GET` | `/health` | — | Service health check (database, builder, library stats) |
 
+### R2 Settings *(R2 mode only — requires `VNM_R2_MODE=true`)*
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/settings/r2` | admin | Get current R2 configuration (secret masked as `••••••••••••••••`) |
+| `PUT` | `/settings/r2` | admin | Save R2 configuration (`{ accountId, accessKeyId, secretAccessKey, bucketName, publicUrl }`); send the mask sentinel to preserve the stored secret |
+| `POST` | `/settings/r2/test` | admin | Test R2 connection with stored or provided credentials; returns `{ ok, message }` |
+
+### Publishing *(R2 mode only — requires `VNM_R2_MODE=true`)*
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/publish/:gameId` | admin | Start a publish job — uploads web build files to R2 and regenerates the static gallery; returns `202` with `{ jobId }` |
+| `GET` | `/publish/:jobId` | admin | Get publish job status (DB record merged with live in-memory progress) |
+| `GET` | `/publish/:jobId/progress` | — | SSE stream of publish progress events (`progress`, `snapshot`, `done`, `error`); unauthenticated (UUID-based security) |
+| `DELETE` | `/publish/:gameId` | admin | Unpublish a game — deletes all R2 files under `{bucket}/{gameId}/` and regenerates the static gallery |
+| `POST` | `/publish/gallery` | admin | Manually regenerate the static gallery on R2 without republishing any games |
+
 ### Internal (service-to-service)
 
 | Method | Endpoint | Auth | Description |
@@ -472,7 +572,7 @@ All endpoints are prefixed with `/api/v1` and proxied through Nginx.
 | `POST` | `/internal/build/:jobId/status` | — | Builder callback — update build job status (`building`, `done`, `failed`) |
 | `POST` | `/internal/build/:jobId/log` | — | Builder callback — append a log line to the in-memory buffer for SSE subscribers |
 
-> **Authentication:** All endpoints except `/health`, `/auth/*`, `/internal/*`, `/covers/*`, and `/build/:jobId/log` (SSE) require a valid `Authorization: Bearer <token>` header. Obtain a token via `POST /auth/login`. Endpoints marked **admin** return `403 Forbidden` for viewer-role users.
+> **Authentication:** All endpoints except `/health`, `/auth/*`, `/internal/*`, `/covers/*`, `/build/:jobId/log` (SSE), and `/publish/:jobId/progress` (SSE) require a valid `Authorization: Bearer <token>` header. Obtain a token via `POST /auth/login`. Endpoints marked **admin** return `403 Forbidden` for viewer-role users.
 
 ---
 
@@ -535,19 +635,26 @@ python src/main.py
 │   │       │   ├── internal.js
 │   │       │   ├── library.js
 │   │       │   ├── metadata.js
+│   │       │   ├── publish.js     # R2 publish/unpublish + SSE progress (R2 mode)
+│   │       │   ├── settings.js    # R2 credential management (R2 mode)
 │   │       │   └── users.js       # User management CRUD (admin only)
-│   │       └── services/      # Business logic
-│   │           ├── buildOrchestrator.js
-│   │           ├── coverDownloader.js
-│   │           ├── enrichment.js
-│   │           ├── matcher.js
-│   │           ├── rpaExtractor.js
-│   │           ├── scanner.js
-│   │           ├── screenshotDownloader.js
-│   │           ├── synopsisCleaner.js
-│   │           ├── titleExtractor.js
-│   │           ├── vndbClient.js
-│   │           └── watcher.js
+│   │       ├── services/      # Business logic
+│   │       │   ├── buildOrchestrator.js
+│   │       │   ├── coverDownloader.js
+│   │       │   ├── encryption.js      # AES-256-GCM encrypt/decrypt for R2 secrets
+│   │       │   ├── enrichment.js
+│   │       │   ├── galleryGenerator.js # Static gallery HTML/JSON builder (R2 mode)
+│   │       │   ├── matcher.js
+│   │       │   ├── r2Client.js        # AWS SDK v3 Cloudflare R2 client (R2 mode)
+│   │       │   ├── rpaExtractor.js
+│   │       │   ├── scanner.js
+│   │       │   ├── screenshotDownloader.js
+│   │       │   ├── synopsisCleaner.js
+│   │       │   ├── titleExtractor.js
+│   │       │   ├── vndbClient.js
+│   │       │   └── watcher.js
+│   │       └── templates/
+│   │           └── gallery.html   # Self-contained static gallery template (R2 mode)
 │   ├── vnm-builder/           # Python build worker
 │   │   ├── Dockerfile
 │   │   ├── docker-entrypoint.sh
@@ -579,6 +686,7 @@ python src/main.py
 │           │   ├── Navbar.jsx
 │           │   ├── Pagination.jsx
 │           │   ├── PlayerChrome.jsx
+│           │   ├── PublishProgressModal.jsx # R2 publish SSE progress modal (R2 mode)
 │           │   ├── ResetPasswordModal.jsx  # Password reset modal (admin)
 │           │   ├── SaveWarningToast.jsx
 │           │   ├── ScreenshotLightbox.jsx
@@ -600,6 +708,8 @@ python src/main.py
 │           │   ├── useFilterSort.js
 │           │   ├── useGallery.js
 │           │   ├── useLibrary.js
+│           │   ├── usePublish.js      # R2 publish/unpublish actions (R2 mode)
+│           │   ├── useSettings.js     # R2 credential form state (R2 mode)
 │           │   ├── useTheme.js
 │           │   └── useUsers.js    # User management data hook (admin)
 │           ├── lib/
@@ -610,6 +720,7 @@ python src/main.py
 │               ├── Library.jsx
 │               ├── Login.jsx
 │               ├── Player.jsx
+│               ├── R2Settings.jsx     # R2 credential settings page (admin, R2 mode)
 │               └── UserManagement.jsx  # Admin user management page
 ├── extras/
 │   └── screenshots/           # README screenshot images
@@ -644,6 +755,11 @@ python src/main.py
 | **"Session expired / logged out unexpectedly"** | Increase `VNM_SESSION_TTL_DAYS` in `.env` (default is 30 days). Clearing browser data also removes the session. |
 | **"Forgot admin password"** | Set `RESET_ADMIN_PASSWORD=true` and the desired `VNM_ADMIN_PASSWORD` in `.env`, then restart the API container (`docker compose restart vnm-api`). The admin account's password will be updated from the environment variable on next startup. Remove `RESET_ADMIN_PASSWORD` (or set to `false`) afterwards. |
 | **Finding error logs** | Persistent logs are at `${VNM_ROOT}/data/logs/vnm-api.log` and `${VNM_ROOT}/data/logs/vnm-builder.log` (structured JSON, one object per line). You can also use `docker compose logs vnm-api` / `docker compose logs vnm-builder` for recent stdout output. Client-side (browser) errors are forwarded to the API log via the `ErrorBoundary` component. |
+| **R2 Settings button not visible** | The R2 button in the navbar only appears when `VNM_R2_MODE=true` and the user is an admin. Verify the env var is set in `.env` and the container was restarted (`docker compose restart vnm-api`). |
+| **"R2 mode is not enabled" error in settings modal** | The modal shows this error when the `/settings/r2` endpoint returns `404`, which means the API started without `VNM_R2_MODE=true`. Check the env var and restart the API container. |
+| **R2 connection test fails** | Verify: (1) account ID matches the Cloudflare dashboard, (2) API token has _Object Read & Write_ permissions on the correct bucket, (3) bucket name is spelled correctly, (4) public URL starts with `https://`. |
+| **Publish job stuck or failing** | Check `docker compose logs vnm-api` for upload errors. Common causes: R2 credentials not saved, bucket not found, or network timeout. Re-saving credentials and retrying usually resolves transient errors. |
+| **Static gallery not updating** | Use **Admin → R2 Settings → Regenerate Gallery** (or `POST /api/v1/publish/gallery`) to force a gallery rebuild. This uploads a fresh `index.html` and `gallery.json` without re-uploading any game files. |
 
 ---
 

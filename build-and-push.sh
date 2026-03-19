@@ -18,7 +18,7 @@ SERVICE="all"
 NO_PUSH=false
 NO_CACHE=false
 
-REGISTRY="docker.lessthanpi.com"
+REGISTRY="docker.yourdomain.com"
 PROJECT_NAME="vnm"
 
 # Parse command line arguments

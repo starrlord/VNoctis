@@ -4,7 +4,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { PrismaClient } from '@prisma/client';
 import { execSync } from 'node:child_process';
-import { mkdirSync, accessSync, constants, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, accessSync, constants, readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import pino from 'pino';
@@ -19,12 +19,38 @@ import importRoutes from './routes/import.js';
 import internalRoutes from './routes/internal.js';
 import favoritesRoutes from './routes/favorites.js';
 import usersRoutes from './routes/users.js';
+import settingsRoutes from './routes/settings.js';
+import publishRoutes from './routes/publish.js';
 import { scanGamesDirectory } from './services/scanner.js';
 import { VNDBClient } from './services/vndbClient.js';
 import { SteamClient } from './services/steamClient.js';
 import { runBatchEnrichment } from './services/enrichment.js';
 import { checkStaleBuilds } from './services/buildOrchestrator.js';
 import { DirectoryWatcher } from './services/watcher.js';
+
+// ── R2 database selection ─────────────────────────────
+// Must happen before PrismaClient is instantiated so it reads the correct URL.
+const R2_MODE = process.env.VNM_R2_MODE === 'true';
+{
+  const dataDir = '/data';
+  const baseDb = `${dataDir}/vnm.db`;
+  const r2Db = `${dataDir}/vnm-r2.db`;
+
+  if (R2_MODE) {
+    if (!existsSync(r2Db) && existsSync(baseDb)) {
+      try {
+        copyFileSync(baseDb, r2Db);
+        console.log('[R2] Copied vnm.db → vnm-r2.db for first R2 startup');
+      } catch (copyErr) {
+        console.error('[R2] Failed to copy base DB:', copyErr.message);
+      }
+    }
+    process.env.DATABASE_URL = `file:${r2Db}`;
+  } else {
+    process.env.DATABASE_URL = `file:${baseDb}`;
+  }
+
+}
 
 // ── Persistent log file ───────────────────────────────────
 const logDir = process.env.LOG_PATH || '/data/logs';
@@ -180,6 +206,12 @@ await fastify.register(usersRoutes, { prefix: '/api/v1' });
 // ── Internal routes (builder callbacks) ───────────────────
 await fastify.register(internalRoutes, { prefix: '/api/v1' });
 
+// ── R2 routes (only when R2_MODE=true) ────────────────────
+if (R2_MODE) {
+  await fastify.register(settingsRoutes, { prefix: '/api/v1' });
+  await fastify.register(publishRoutes, { prefix: '/api/v1' });
+}
+
 // ── Authentication middleware ─────────────────────────────
 // Protect all routes except paths that either don't need auth or can't send headers
 // (EventSource SSE and <img> tags cannot attach Authorization headers)
@@ -192,7 +224,8 @@ fastify.addHook('onRequest', async (request, reply) => {
     url.startsWith('/api/v1/auth/') ||
     url.startsWith('/api/v1/internal/') ||
     url.startsWith('/api/v1/covers/') ||
-    /^\/api\/v1\/build\/[^/]+\/log/.test(url)
+    /^\/api\/v1\/build\/[^/]+\/log/.test(url) ||
+    /^\/api\/v1\/publish\/[^/]+\/progress/.test(url)
   ) {
     return;
   }
@@ -235,7 +268,10 @@ fastify.addHook('onRequest', async (request, reply) => {
       /^\/api\/v1\/library\/[^/]+\/mark-playable$/.test(url) ||
       (request.method === 'POST' && /^\/api\/v1\/build\/[^/]+$/.test(url) && !url.includes('/log')) ||
       (request.method === 'DELETE' && /^\/api\/v1\/build\/[^/]+$/.test(url)) ||
-      /^\/api\/v1\/metadata\//.test(url);
+      /^\/api\/v1\/metadata\//.test(url) ||
+      // R2 routes (all admin-only)
+      url.startsWith('/api/v1/settings/') ||
+      (url.startsWith('/api/v1/publish/') && !url.endsWith('/progress'));
 
     if (isAdminRoute && dbUser.role !== 'admin') {
       reply.code(403).send({ code: 'FORBIDDEN', message: 'Admin access required' });
@@ -341,6 +377,50 @@ const start = async () => {
         { err: migrationErr.message },
         'Database migration failed — continuing with existing schema'
       );
+    }
+
+    // ── R2 schema init (only in R2 mode) ────────────────────
+    // Applies R2-specific tables/columns to vnm-r2.db via raw SQL.
+    // This keeps vnm.db (the non-R2 database) clean of R2-specific schema.
+    if (R2_MODE) {
+      fastify.log.info('Applying R2 schema additions to vnm-r2.db…');
+      try {
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "Setting" (
+            "key" TEXT NOT NULL PRIMARY KEY,
+            "value" TEXT NOT NULL,
+            "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "PublishJob" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "gameId" TEXT NOT NULL,
+            "status" TEXT NOT NULL DEFAULT 'queued',
+            "progress" INTEGER NOT NULL DEFAULT 0,
+            "filesTotal" INTEGER NOT NULL DEFAULT 0,
+            "filesUploaded" INTEGER NOT NULL DEFAULT 0,
+            "error" TEXT,
+            "startedAt" DATETIME,
+            "completedAt" DATETIME,
+            "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        // ALTER TABLE ADD COLUMN is idempotent in SQLite only when column is absent;
+        // use try/catch for each column so existing installs don't fail.
+        for (const col of [
+          `ALTER TABLE "Game" ADD COLUMN "publishStatus" TEXT NOT NULL DEFAULT 'not_published'`,
+          `ALTER TABLE "Game" ADD COLUMN "publishedAt" DATETIME`,
+          `ALTER TABLE "Game" ADD COLUMN "publishedVersion" TEXT`,
+        ]) {
+          try { await prisma.$executeRawUnsafe(col); } catch { /* column already exists */ }
+        }
+        fastify.log.info('R2 schema additions applied successfully');
+      } catch (r2SchemaErr) {
+        fastify.log.error({ err: r2SchemaErr.message }, 'Failed to apply R2 schema additions');
+      }
     }
 
     // ── Admin user seed & favorite migration ────────────────

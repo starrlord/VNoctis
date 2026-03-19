@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__qdrant__qdrant-store",
+      "Bash(npx prisma:*)",
+      "WebFetch(domain:developers.cloudflare.com)"
+    ]
+  }
+}

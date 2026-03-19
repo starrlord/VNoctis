@@ -12,7 +12,7 @@ import { Link } from 'react-router-dom';
  *   onLogout?: () => void,
  * }} props
  */
-export default function Navbar({ onImport, isDark = true, onToggleTheme, username, onLogout, isAdmin = false }) {
+export default function Navbar({ onImport, onR2Settings, isDark = true, onToggleTheme, username, onLogout, isAdmin = false, r2Mode = false }) {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-3 sm:px-6 shadow-lg transition-colors duration-200">
       {/* Left: App title — clickable, navigates to admin library */}
@@ -99,6 +99,20 @@ export default function Navbar({ onImport, isDark = true, onToggleTheme, usernam
             </svg>
             <span className="hidden sm:inline">Users</span>
           </Link>
+        )}
+
+        {/* R2 Settings button (admin + R2 mode only) */}
+        {isAdmin && r2Mode && onR2Settings && (
+          <button
+            onClick={onR2Settings}
+            className="flex items-center gap-2 px-2 sm:px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium rounded-lg transition-colors duration-200"
+            title="R2 Publishing Settings"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" />
+            </svg>
+            <span className="hidden sm:inline">R2</span>
+          </button>
         )}
 
         {/* Import Game button (admin only) */}

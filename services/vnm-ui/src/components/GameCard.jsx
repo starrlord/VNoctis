@@ -7,7 +7,7 @@ import { generateGradient, formatRating, getRatingColor, truncate } from '../lib
  *
  * @param {{ game: object, onClick: (game: object) => void, onHide?: (game: object) => void, onFavorite?: (game: object) => void }} props
  */
-export default function GameCard({ game, onClick, onHide, onFavorite, isAdmin = true }) {
+export default function GameCard({ game, onClick, onHide, onFavorite, isAdmin = true, r2Mode = false }) {
   const [hovered, setHovered] = useState(false);
 
   const title = game.vndbTitle || game.extractedTitle || 'Unknown';
@@ -166,6 +166,13 @@ export default function GameCard({ game, onClick, onHide, onFavorite, isAdmin = 
         </h3>
         {game.developer && (
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{game.developer}</p>
+        )}
+        {r2Mode && game.buildStatus === 'built' && (
+          <span className={`inline-block mt-1 text-[10px] font-medium ${
+            game.publishStatus === 'published' ? 'text-green-500' : 'text-gray-400 dark:text-gray-500'
+          }`}>
+            {game.publishStatus === 'published' ? '● R2 Published' : '○ Not Published'}
+          </span>
         )}
       </div>
 

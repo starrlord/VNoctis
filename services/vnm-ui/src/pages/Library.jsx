@@ -6,18 +6,23 @@ import SearchAndFilter from '../components/SearchAndFilter';
 import SortBar from '../components/SortBar';
 import Pagination from '../components/Pagination';
 import StarBackground from '../components/StarBackground';
+import PublishProgressModal from '../components/PublishProgressModal';
+import UnpublishConfirmModal from '../components/UnpublishConfirmModal';
 import useFilterSort from '../hooks/useFilterSort';
 import useLibrary from '../hooks/useLibrary';
 import useAuth from '../hooks/useAuth';
+import usePublish from '../hooks/usePublish';
 
 /**
  * Library page — Netflix-style poster wall with search, filter, sort, and detail modal.
  * Owns its own data via useLibrary (fetches games, handles scanning).
  */
-export default function Library() {
+export default function Library({ r2Mode = false }) {
   const { isAdmin } = useAuth();
   const { games, loading, error, refetch, scanning, triggerScan, hideGame, unhideAll, favoriteGame } = useLibrary();
+  const { publishGame, unpublishGame, activeJob, clearJob } = usePublish();
   const [selectedGameId, setSelectedGameId] = useState(null);
+  const [pendingUnpublishGame, setPendingUnpublishGame] = useState(null);
 
   // Listen for external refresh events (e.g., after game import from Navbar modal)
   useEffect(() => {
@@ -91,6 +96,31 @@ export default function Library() {
     await unhideAll();
     setShowHidden(false);
   };
+
+  const handlePublish = useCallback(async (game) => {
+    try {
+      await publishGame(game.id);
+    } catch {
+      // Error surfaces via the progress modal
+    }
+  }, [publishGame]);
+
+  const handleUnpublish = useCallback((game) => {
+    setPendingUnpublishGame(game);
+  }, []);
+
+  const handleUnpublishConfirmed = useCallback(async (gameId) => {
+    await unpublishGame(gameId);
+    refetch({ silent: true });
+  }, [unpublishGame, refetch]);
+
+  const handleUnpublishClose = useCallback(() => {
+    setPendingUnpublishGame(null);
+  }, []);
+
+  const handlePublishDone = useCallback(() => {
+    refetch({ silent: true });
+  }, [refetch]);
 
   const handleModalClose = () => {
     setSelectedGameId(null);
@@ -254,7 +284,7 @@ export default function Library() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedGames.map((game) => (
-              <GameCard key={game.id} game={game} onClick={handleCardClick} onHide={handleHide} onFavorite={handleFavorite} isAdmin={isAdmin} />
+              <GameCard key={game.id} game={game} onClick={handleCardClick} onHide={handleHide} onFavorite={handleFavorite} isAdmin={isAdmin} r2Mode={r2Mode} />
             ))}
           </div>
 
@@ -302,12 +332,37 @@ export default function Library() {
         }}
         onHide={handleHide}
         onFavorite={handleFavorite}
+        onPublish={isAdmin && r2Mode ? handlePublish : undefined}
+        onUnpublish={isAdmin && r2Mode ? handleUnpublish : undefined}
         onTagClick={(tagName) => {
           clearFilters();
           toggleTag(tagName);
           setSelectedGameId(null);
         }}
         isAdmin={isAdmin}
+        r2Mode={r2Mode}
+      />
+    )}
+
+    {/* Publish progress modal */}
+    {activeJob && (
+      <PublishProgressModal
+        jobId={activeJob.jobId}
+        gameTitle={games.find((g) => g.id === activeJob.gameId)?.vndbTitle
+          || games.find((g) => g.id === activeJob.gameId)?.extractedTitle
+          || 'Unknown'}
+        coverUrl={activeJob.gameId ? `/api/v1/covers/${activeJob.gameId}` : undefined}
+        onClose={clearJob}
+        onDone={handlePublishDone}
+      />
+    )}
+
+    {/* Unpublish confirmation modal */}
+    {pendingUnpublishGame && (
+      <UnpublishConfirmModal
+        game={pendingUnpublishGame}
+        onUnpublish={handleUnpublishConfirmed}
+        onClose={handleUnpublishClose}
       />
     )}
     </>
