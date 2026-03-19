@@ -111,15 +111,26 @@ async function runPublishJob(jobId, game, prisma, logger, jwtSecret) {
     state.progress = 0;
     broadcast(jobId, { type: 'progress', progress: 0, filesTotal: state.filesTotal, filesUploaded: 0 });
 
-    // Upload all web build files
-    for (const filePath of files) {
-      const relPath = relative(buildDir, filePath);
-      const r2Key = `games/${game.id}/${relPath.replace(/\\/g, '/')}`;
-      await uploadFile(client, bucketName, r2Key, filePath);
-      state.filesUploaded += 1;
-      state.progress = Math.round((state.filesUploaded / state.filesTotal) * 100);
-      broadcast(jobId, { type: 'progress', progress: state.progress, filesTotal: state.filesTotal, filesUploaded: state.filesUploaded });
+    // Upload all web build files (parallel, 8 concurrent uploads)
+    const UPLOAD_CONCURRENCY = 8;
+    let fileIdx = 0;
+
+    async function uploadNext() {
+      while (fileIdx < files.length) {
+        const idx = fileIdx++;
+        const filePath = files[idx];
+        const relPath = relative(buildDir, filePath);
+        const r2Key = `games/${game.id}/${relPath.replace(/\\/g, '/')}`;
+        await uploadFile(client, bucketName, r2Key, filePath);
+        state.filesUploaded += 1;
+        state.progress = Math.round((state.filesUploaded / state.filesTotal) * 100);
+        broadcast(jobId, { type: 'progress', progress: state.progress, filesTotal: state.filesTotal, filesUploaded: state.filesUploaded });
+      }
     }
+
+    await Promise.all(
+      Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, () => uploadNext())
+    );
 
     // Upload cover (if exists)
     if (game.coverPath) {
