@@ -42,6 +42,7 @@ export default function Player() {
 
   // ---- Fullscreen ----
   const containerRef = useRef(null);
+  const iframeRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // ---- Chrome bar visibility (ref-based dedup) ----
@@ -58,8 +59,44 @@ export default function Player() {
     setChromeVisibleRaw(val);
   }, []);
 
-  // ---- Volume (visual-only for now) ----
+  // ---- Volume & mute ----
   const [volume, setVolume] = useState(80);
+  const [muted, setMuted] = useState(false);
+  const toggleMute = useCallback(() => setMuted((m) => !m), []);
+
+  // Mute / unmute the Ren'Py game audio inside the iframe.
+  // Emscripten (used by Ren'Py web builds) exposes its AudioContext at
+  // well-known global paths.  We suspend/resume the context and also
+  // mute any <audio>/<video> elements as a belt-and-suspenders fallback.
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    const iframeWin = iframe.contentWindow;
+    if (!iframeWin) return;
+
+    try {
+      // Collect all AudioContexts from known Emscripten / SDL2 locations
+      const contexts = new Set();
+      if (iframeWin.SDL2?.audioContext) contexts.add(iframeWin.SDL2.audioContext);
+      if (iframeWin.SDL?.audioContext) contexts.add(iframeWin.SDL.audioContext);
+      if (iframeWin.Module?.SDL2?.audioContext) contexts.add(iframeWin.Module.SDL2.audioContext);
+
+      for (const ctx of contexts) {
+        if (muted) ctx.suspend();
+        else ctx.resume();
+      }
+
+      // Fallback: mute HTML media elements
+      const doc = iframeWin.document;
+      if (doc) {
+        doc.querySelectorAll('audio, video').forEach((el) => {
+          el.muted = muted;
+        });
+      }
+    } catch {
+      // Cross-origin or access error — silently ignore
+    }
+  }, [muted]);
 
   // ---- Force-play for stale builds ----
   const [forcePlay, setForcePlay] = useState(false);
@@ -244,7 +281,9 @@ export default function Player() {
         isFullscreen={isFullscreen}
         visible={chromeVisible}
         volume={volume}
+        muted={muted}
         onVolumeChange={setVolume}
+        onToggleMute={toggleMute}
         onToggleFullscreen={toggleFullscreen}
         showFullscreenButton={!isIOS}
       />
@@ -310,6 +349,7 @@ export default function Player() {
         {iframeReady ? (
           <>
             <iframe
+              ref={iframeRef}
               src={`${game.webBuildPath}/index.html`}
               title={title}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"

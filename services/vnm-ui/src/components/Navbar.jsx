@@ -15,10 +15,10 @@ import { Link } from 'react-router-dom';
 export default function Navbar({ onImport, isDark = true, onToggleTheme, username, onLogout, isAdmin = false }) {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-3 sm:px-6 shadow-lg transition-colors duration-200">
-      {/* Left: App title */}
-      <h1 className="text-xl font-bold text-gray-900 dark:text-white tracking-wide select-none">
+      {/* Left: App title — clickable, navigates to admin library */}
+      <Link to="/" className="text-xl font-bold text-gray-900 dark:text-white tracking-wide select-none hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
         🎮 VNoctis Manager
-      </h1>
+      </Link>
 
       {/* Right: Theme toggle + Import + User controls */}
       <div className="flex items-center gap-2 sm:gap-4">

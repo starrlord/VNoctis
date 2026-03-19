@@ -79,7 +79,7 @@ export default function GameCard({ game, onClick, onHide, onFavorite, isAdmin = 
             className={`absolute top-2 left-2 z-10 w-7 h-7 flex items-center justify-center rounded-full backdrop-blur-sm transition-all duration-200 ${
               game.favorite
                 ? 'bg-red-500/30 text-red-400 hover:bg-red-500/50 hover:text-red-300 opacity-100'
-                : 'bg-black/40 text-white/70 hover:bg-black/60 hover:text-red-400 opacity-0 group-hover:opacity-100'
+                : 'bg-black/40 text-white/50 hover:bg-black/60 hover:text-red-400 opacity-70 group-hover:opacity-100'
             }`}
             title={game.favorite ? 'Remove from favorites' : 'Add to favorites'}
           >
