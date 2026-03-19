@@ -1,0 +1,2015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VNoctis Manager — Self-Hosted Visual Novel Library</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=JetBrains+Mono:wght@300;400;600&family=Noto+Serif+JP:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    /* ── Refined Deep Space Palette ── */
+    --ink:       #03020a;
+    --deep:      #060414;
+    --surface:   #0a0818;
+    --panel:     #0d0b1e;
+    --panel2:    #110f24;
+    --border:    #1e1a36;
+    --border2:   #2a2550;
+    --muted:     #3d3760;
+
+    /* ── Accent: vivid violet → electric lavender ── */
+    --violet:    #7c3aed;
+    --violet2:   #9f5ffc;
+    --amethyst:  #b57bff;
+    --lilac:     #d4b8ff;
+
+    /* ── Warm gold accent ── */
+    --gold:      #f0c060;
+    --gold2:     #ffd980;
+
+    /* ── Cyan/teal accent ── */
+    --cyan:      #22d3ee;
+    --cyan2:     #67e8f9;
+
+    /* ── Text hierarchy ── */
+    --text-1:    #f8f6ff;   /* headings */
+    --text-2:    #c8c0e8;   /* body */
+    --text-3:    #8e86b4;   /* captions, muted */
+    --text-4:    #5c5680;   /* very muted */
+
+    /* ── Glows ── */
+    --glow-v:    rgba(124, 58, 237, 0.45);
+    --glow-c:    rgba(34, 211, 238, 0.25);
+    --glow-g:    rgba(240, 192, 96, 0.3);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--ink);
+    color: var(--text-2);
+    font-family: 'JetBrains Mono', monospace;
+    overflow-x: hidden;
+    cursor: none;
+  }
+
+  /* ── Custom Cursor ── */
+  .cursor-dot {
+    width: 7px; height: 7px;
+    background: var(--cyan);
+    border-radius: 50%;
+    position: fixed; pointer-events: none; z-index: 9999;
+    transform: translate(-50%,-50%);
+    mix-blend-mode: screen;
+    box-shadow: 0 0 10px var(--cyan), 0 0 20px var(--cyan2);
+  }
+  .cursor-ring {
+    width: 34px; height: 34px;
+    border: 1.5px solid rgba(34,211,238,0.45);
+    border-radius: 50%;
+    position: fixed; pointer-events: none; z-index: 9998;
+    transform: translate(-50%,-50%);
+    transition: transform 0.18s ease, width 0.2s ease, height 0.2s ease, border-color 0.2s ease;
+  }
+  .cursor-ring.hovered {
+    width: 54px; height: 54px;
+    border-color: var(--cyan);
+    box-shadow: 0 0 20px rgba(34,211,238,0.2);
+  }
+
+  /* ── Scanlines Overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 9990; pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.06) 2px,
+      rgba(0,0,0,0.06) 4px
+    );
+  }
+
+  /* ── Noise grain ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0; z-index: 9989; pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 200px;
+  }
+
+  /* ════════════════════════ HERO ════════════════════════ */
+  #hero {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse 70% 60% at 50% -10%, #160a30 0%, transparent 60%),
+      radial-gradient(ellipse 50% 40% at 80% 80%, #0a0520 0%, transparent 60%),
+      var(--ink);
+  }
+
+  .star-field {
+    position: absolute; inset: 0; overflow: hidden;
+  }
+  .star {
+    position: absolute; border-radius: 50%; background: white;
+    animation: twinkle var(--dur, 4s) ease-in-out infinite var(--delay, 0s);
+  }
+  @keyframes twinkle {
+    0%,100% { opacity: var(--min-op, 0.1); transform: scale(1); }
+    50%      { opacity: var(--max-op, 0.7); transform: scale(1.3); }
+  }
+
+  .nebula {
+    position: absolute; border-radius: 50%; filter: blur(90px); pointer-events: none;
+  }
+  .nebula-1 { width: 800px; height: 500px; background: radial-gradient(ellipse, rgba(124,58,237,0.18) 0%, transparent 70%); top: -150px; left: 50%; transform: translateX(-50%); }
+  .nebula-2 { width: 500px; height: 350px; background: radial-gradient(ellipse, rgba(34,211,238,0.07) 0%, transparent 70%); bottom: 0; right: -100px; }
+  .nebula-3 { width: 450px; height: 450px; background: radial-gradient(ellipse, rgba(159,95,252,0.09) 0%, transparent 70%); top: 25%; left: -120px; }
+
+  .hero-inner {
+    position: relative; z-index: 2;
+    text-align: center;
+    padding: 2rem;
+    max-width: 1000px;
+  }
+
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 0.75rem;
+    background: rgba(124,58,237,0.1);
+    border: 1px solid rgba(124,58,237,0.35);
+    border-radius: 2px;
+    padding: 0.45rem 1.4rem;
+    font-size: 0.62rem; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--amethyst);
+    margin-bottom: 2.5rem;
+    animation: fadeSlideDown 0.8s ease both;
+  }
+  .hero-eyebrow::before, .hero-eyebrow::after {
+    content: '▸'; font-size: 0.5rem; opacity: 0.7; color: var(--cyan);
+  }
+
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(4rem, 10vw, 9rem);
+    font-weight: 900;
+    line-height: 0.9;
+    letter-spacing: -0.02em;
+    color: var(--text-1);
+    animation: fadeSlideDown 0.8s 0.15s ease both;
+  }
+  .hero-title .accent {
+    color: transparent;
+    -webkit-text-stroke: 1.5px var(--violet2);
+    display: block;
+    font-style: italic;
+    opacity: 0.9;
+  }
+  .hero-title .glow-word {
+    text-shadow: 0 0 60px var(--glow-v), 0 0 120px rgba(124,58,237,0.15);
+  }
+
+  .hero-subtitle {
+    font-family: 'Noto Serif JP', serif;
+    font-size: clamp(0.85rem, 1.5vw, 1.05rem);
+    color: var(--text-2);
+    letter-spacing: 0.06em;
+    margin-top: 2rem;
+    animation: fadeSlideDown 0.8s 0.3s ease both;
+    font-weight: 300;
+    line-height: 1.7;
+  }
+
+  .hero-cta-row {
+    display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;
+    margin-top: 3rem;
+    animation: fadeSlideDown 0.8s 0.45s ease both;
+  }
+
+  .btn-primary {
+    padding: 0.9rem 2.6rem;
+    background: var(--violet);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+    border: none; cursor: none;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+    position: relative; overflow: hidden;
+    text-decoration: none; display: inline-block;
+    font-weight: 600;
+  }
+  .btn-primary::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 50%);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .btn-primary:hover { background: var(--violet2); box-shadow: 0 0 40px rgba(124,58,237,0.55), 0 0 80px rgba(124,58,237,0.2); transform: translateY(-2px); }
+  .btn-primary:hover::after { opacity: 1; }
+
+  .btn-ghost {
+    padding: 0.9rem 2.6rem;
+    background: transparent;
+    color: var(--text-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+    border: 1px solid var(--border2); cursor: none;
+    transition: border-color 0.2s, color 0.2s, box-shadow 0.2s;
+    text-decoration: none; display: inline-block;
+  }
+  .btn-ghost:hover { border-color: var(--cyan); color: var(--text-1); box-shadow: 0 0 20px rgba(34,211,238,0.1); }
+
+  .scroll-hint {
+    position: absolute; bottom: 2.5rem; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+    font-size: 0.55rem; letter-spacing: 0.25em; color: var(--text-4);
+    animation: fadeSlideDown 1s 1s ease both;
+    text-transform: uppercase;
+  }
+  .scroll-hint-line {
+    width: 1px; height: 60px;
+    background: linear-gradient(to bottom, transparent, var(--amethyst), transparent);
+    animation: scrollPulse 2s ease-in-out infinite;
+  }
+  @keyframes scrollPulse {
+    0%,100% { opacity: 0.3; transform: scaleY(0.8); }
+    50% { opacity: 1; transform: scaleY(1); }
+  }
+
+  @keyframes fadeSlideDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── VN DIALOGUE BOX ── */
+  .vn-box {
+    background: rgba(10,8,22,0.95);
+    border: 1px solid var(--border2);
+    border-left: 3px solid var(--violet);
+    padding: 1.2rem 1.6rem;
+    position: absolute;
+    font-size: 0.72rem;
+    line-height: 1.9;
+    color: var(--text-2);
+    max-width: 320px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .vn-box .speaker {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.82rem;
+    color: var(--amethyst);
+    font-style: italic;
+    margin-bottom: 0.5rem;
+    display: block;
+  }
+  .vn-box-1 { bottom: 8%; left: 3%; transform: rotate(-1.5deg); animation: floatA 8s ease-in-out infinite; }
+  .vn-box-2 { top: 12%; right: 2%; transform: rotate(1deg); animation: floatB 10s ease-in-out infinite; }
+  @keyframes floatA { 0%,100%{transform:rotate(-1.5deg) translateY(0)} 50%{transform:rotate(-1.5deg) translateY(-12px)} }
+  @keyframes floatB { 0%,100%{transform:rotate(1deg) translateY(0)} 50%{transform:rotate(1deg) translateY(10px)} }
+
+  /* ════════════════════════ SECTION BASE ════════════════════════ */
+  section { position: relative; }
+
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 0 2rem;
+  }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 5rem;
+  }
+  .section-label {
+    display: inline-block;
+    font-size: 0.6rem; letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 1rem;
+  }
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.5rem, 5vw, 4.5rem);
+    font-weight: 700;
+    line-height: 1.05;
+    color: var(--text-1);
+  }
+  .section-title em {
+    font-style: italic;
+    color: transparent;
+    -webkit-text-stroke: 1.5px var(--amethyst);
+  }
+  .section-desc {
+    font-size: 0.82rem;
+    color: var(--text-2);
+    line-height: 2;
+    max-width: 600px;
+    margin: 1.5rem auto 0;
+  }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--border2), var(--violet), var(--border2), transparent);
+    margin: 0;
+  }
+
+  /* ════════════════════════ FEATURES ════════════════════════ */
+  #features {
+    padding: 10rem 0;
+    background:
+      linear-gradient(to bottom, var(--ink), var(--deep) 50%, var(--ink)),
+      radial-gradient(ellipse 60% 40% at 50% 50%, rgba(124,58,237,0.04) 0%, transparent 70%);
+  }
+
+  .features-manga {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 1.5px;
+    background: var(--border);
+    border: 1.5px solid var(--border);
+    margin-top: 4rem;
+    position: relative;
+  }
+  .features-manga::before {
+    content: 'FEATURES';
+    position: absolute;
+    top: -2.5rem; left: 0;
+    font-size: 0.55rem; letter-spacing: 0.4em;
+    color: var(--violet2);
+  }
+
+  .manga-panel {
+    background: var(--surface);
+    padding: 2.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.3s;
+  }
+  .manga-panel:hover { background: var(--panel2); }
+  .manga-panel::before {
+    content: '';
+    position: absolute; top: 0; right: 0;
+    width: 0; height: 0;
+    border-style: solid;
+    border-width: 0 28px 28px 0;
+    border-color: transparent var(--violet) transparent transparent;
+  }
+  .manga-panel.large {
+    grid-column: span 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+    align-items: center;
+    padding: 3.5rem;
+  }
+  .manga-panel.tall {
+    grid-row: span 2;
+  }
+
+  .panel-num {
+    font-size: 5rem;
+    font-weight: 900;
+    color: var(--violet2);
+    opacity: 0.08;
+    position: absolute;
+    bottom: -0.5rem; right: 1rem;
+    line-height: 1;
+    font-family: 'Playfair Display', serif;
+    user-select: none;
+    transition: opacity 0.3s;
+  }
+  .manga-panel:hover .panel-num { opacity: 0.18; }
+
+  .panel-icon {
+    font-size: 2rem;
+    margin-bottom: 1.2rem;
+    display: block;
+    filter: drop-shadow(0 0 14px var(--glow-v));
+  }
+  .panel-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-1);
+    margin-bottom: 0.8rem;
+    line-height: 1.2;
+  }
+  .panel-desc {
+    font-size: 0.75rem;
+    color: var(--text-2);
+    line-height: 2;
+  }
+  .panel-tag {
+    display: inline-block;
+    margin-top: 1.2rem;
+    background: rgba(124,58,237,0.12);
+    border: 1px solid rgba(159,95,252,0.3);
+    color: var(--amethyst);
+    font-size: 0.58rem; letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 0.3rem 0.8rem;
+  }
+
+  /* ════════════════════════ ARCHITECTURE ════════════════════════ */
+  #architecture {
+    padding: 10rem 0;
+    background: var(--ink);
+  }
+
+  .arch-diagram {
+    margin-top: 4rem;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: center;
+    gap: 0;
+    position: relative;
+  }
+
+  .arch-service {
+    background: var(--panel);
+    border: 1px solid var(--border2);
+    padding: 2.5rem 2rem;
+    position: relative;
+    text-align: center;
+    transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
+  }
+  .arch-service:hover {
+    border-color: var(--violet2);
+    transform: translateY(-6px);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,58,237,0.25), 0 0 40px rgba(124,58,237,0.1);
+  }
+  .arch-service::after {
+    content: '';
+    position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 30%; height: 1px;
+    background: var(--violet);
+    transform-origin: center;
+    transition: width 0.3s;
+  }
+  .arch-service:hover::after { width: 80%; }
+
+  .arch-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem; font-weight: 700;
+    color: var(--text-1);
+    margin-bottom: 0.4rem;
+  }
+  .arch-stack {
+    font-size: 0.6rem; letter-spacing: 0.1em;
+    color: var(--cyan);
+    margin-bottom: 1rem;
+  }
+  .arch-role {
+    font-size: 0.7rem;
+    color: var(--text-2);
+    line-height: 1.75;
+  }
+  .arch-port {
+    position: absolute;
+    top: 1rem; right: 1rem;
+    font-size: 0.55rem; letter-spacing: 0.1em;
+    color: var(--text-3);
+    background: rgba(124,58,237,0.08);
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border2);
+  }
+
+  .arch-arrow {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 1rem;
+    position: relative;
+  }
+  .arch-arrow-line {
+    width: 60px; height: 1px;
+    background: linear-gradient(to right, var(--border2), var(--violet));
+    position: relative;
+  }
+  .arch-arrow-line::after {
+    content: '';
+    position: absolute; right: -1px; top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-left: 6px solid var(--violet);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+  }
+  .arch-arrow-label {
+    position: absolute; top: -1.4rem;
+    font-size: 0.5rem; letter-spacing: 0.15em;
+    color: var(--text-3); white-space: nowrap;
+  }
+
+  .arch-volumes {
+    display: flex; flex-wrap: wrap; gap: 0.5rem;
+    margin-top: 1.5rem;
+    justify-content: center;
+  }
+  .vol-pill {
+    font-size: 0.55rem;
+    color: var(--text-3);
+    background: rgba(124,58,237,0.07);
+    border: 1px solid var(--border2);
+    padding: 0.25rem 0.6rem;
+    border-radius: 1px;
+  }
+
+  /* ════════════════════════ STATS ════════════════════════ */
+  #stats {
+    padding: 8rem 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+  }
+  .stat-item {
+    padding: 3rem 2rem;
+    border-right: 1px solid var(--border);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.3s;
+  }
+  .stat-item:last-child { border-right: none; }
+  .stat-item:hover { background: rgba(124,58,237,0.05); }
+  .stat-item::before {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 0; height: 2px;
+    background: var(--cyan);
+    transition: width 0.4s ease;
+  }
+  .stat-item:hover::before { width: 60%; }
+
+  .stat-num {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.5rem, 4vw, 4rem);
+    font-weight: 900;
+    color: var(--text-1);
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .stat-num .unit { color: var(--cyan); font-style: italic; }
+  .stat-label {
+    font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  /* ════════════════════════ HOW IT WORKS ════════════════════════ */
+  #how {
+    padding: 10rem 0;
+    background: linear-gradient(to bottom, var(--ink), var(--deep));
+  }
+
+  .steps-timeline {
+    position: relative;
+    margin-top: 5rem;
+  }
+  .steps-timeline::before {
+    content: '';
+    position: absolute;
+    left: 50%; top: 0; bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--violet) 10%, var(--violet) 90%, transparent);
+    transform: translateX(-50%);
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 1fr 80px 1fr;
+    gap: 0;
+    align-items: center;
+    margin-bottom: 5rem;
+    position: relative;
+  }
+  .step:nth-child(odd) .step-content { grid-column: 1; text-align: right; }
+  .step:nth-child(odd) .step-void    { grid-column: 2; }
+  .step:nth-child(odd) .step-visual  { grid-column: 3; }
+  .step:nth-child(even) .step-content { grid-column: 3; text-align: left; }
+  .step:nth-child(even) .step-void    { grid-column: 2; }
+  .step:nth-child(even) .step-visual  { grid-column: 1; }
+
+  .step-node {
+    width: 44px; height: 44px;
+    background: var(--violet);
+    border: 3px solid var(--ink);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; font-weight: 600; color: white;
+    margin: 0 auto;
+    position: relative; z-index: 2;
+    box-shadow: 0 0 0 6px rgba(124,58,237,0.18), 0 0 30px rgba(124,58,237,0.35);
+    transition: transform 0.3s, box-shadow 0.3s;
+  }
+  .step:hover .step-node {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 10px rgba(124,58,237,0.14), 0 0 50px rgba(124,58,237,0.45);
+  }
+
+  .step-content { padding: 1.5rem; }
+  .step-num-label {
+    font-size: 0.58rem; letter-spacing: 0.25em; text-transform: uppercase;
+    color: var(--cyan); margin-bottom: 0.6rem;
+  }
+  .step-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem; font-weight: 700;
+    color: var(--text-1); margin-bottom: 0.8rem; line-height: 1.2;
+  }
+  .step-desc {
+    font-size: 0.74rem; color: var(--text-2); line-height: 2;
+  }
+
+  .step-visual { padding: 1.5rem; }
+  .step-card {
+    background: var(--panel);
+    border: 1px solid var(--border2);
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .step-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right, var(--violet), transparent);
+  }
+  .step-card-title {
+    font-size: 0.62rem; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--amethyst); margin-bottom: 1rem;
+  }
+  .code-line {
+    font-size: 0.66rem;
+    color: var(--text-2);
+    padding: 0.25rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    line-height: 1.6;
+    display: flex; gap: 1rem;
+  }
+  .code-line .lnum { color: var(--muted); min-width: 1.5rem; text-align: right; }
+  .code-line .kw { color: var(--amethyst); }
+  .code-line .str { color: var(--cyan); }
+  .code-line .cmt { color: var(--text-4); }
+
+  /* ════════════════════════ TECH STACK ════════════════════════ */
+  #stack {
+    padding: 10rem 0;
+    background: var(--ink);
+  }
+
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-top: 4rem;
+  }
+
+  .stack-item {
+    background: var(--surface);
+    padding: 2.5rem 2rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
+    transition: background 0.25s;
+    position: relative;
+    overflow: hidden;
+  }
+  .stack-item::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(124,58,237,0.07) 0%, transparent 60%);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .stack-item:hover { background: var(--panel2); }
+  .stack-item:hover::after { opacity: 1; }
+
+  .stack-emoji { font-size: 1.8rem; flex-shrink: 0; filter: drop-shadow(0 0 10px rgba(124,58,237,0.4)); }
+  .stack-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--text-1); margin-bottom: 0.3rem;
+  }
+  .stack-role {
+    font-size: 0.62rem; letter-spacing: 0.1em;
+    color: var(--cyan); margin-bottom: 0.6rem;
+  }
+  .stack-desc {
+    font-size: 0.7rem;
+    color: var(--text-2); line-height: 1.85;
+  }
+
+  /* ════════════════════════ QUICK START ════════════════════════ */
+  #quickstart {
+    padding: 10rem 0;
+    background: linear-gradient(to bottom, var(--deep) 0%, var(--ink) 100%);
+  }
+
+  .terminal {
+    background: #060410;
+    border: 1px solid var(--border2);
+    position: relative;
+    margin-top: 4rem;
+    overflow: hidden;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(124,58,237,0.1), 0 0 60px rgba(124,58,237,0.05);
+  }
+  .terminal-bar {
+    background: #0a0818;
+    padding: 0.85rem 1.5rem;
+    display: flex; align-items: center; gap: 0.6rem;
+    border-bottom: 1px solid var(--border2);
+  }
+  .term-dot { width: 11px; height: 11px; border-radius: 50%; }
+  .term-dot-r { background: #ff5f56; }
+  .term-dot-y { background: #ffbd2e; }
+  .term-dot-g { background: #27c93f; }
+  .term-title {
+    margin-left: auto;
+    font-size: 0.6rem; letter-spacing: 0.15em;
+    color: var(--text-3); text-transform: uppercase;
+  }
+  .term-body {
+    padding: 2rem 2.5rem;
+    font-size: 0.78rem;
+    line-height: 2;
+  }
+  .term-line { display: flex; gap: 1rem; }
+  .term-prompt { color: var(--violet2); user-select: none; }
+  .term-cmd { color: var(--text-1); }
+  .term-comment { color: var(--text-4); opacity: 0.9; }
+  .term-output { color: var(--text-2); padding-left: 1.5rem; }
+  .term-success { color: var(--cyan); }
+
+  .typewriter-cursor {
+    display: inline-block;
+    width: 8px; height: 1em;
+    background: var(--violet2);
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* ════════════════════════ SECURITY ════════════════════════ */
+  .security-strip {
+    padding: 5rem 0;
+    background: rgba(124,58,237,0.03);
+    border-top: 1px solid rgba(124,58,237,0.15);
+    border-bottom: 1px solid rgba(124,58,237,0.15);
+  }
+  .security-inner {
+    display: flex; align-items: center; gap: 3rem; flex-wrap: wrap;
+    justify-content: center;
+  }
+  .sec-badge {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 1rem 2rem;
+    border: 1px solid var(--border2);
+    background: rgba(124,58,237,0.05);
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .sec-badge:hover { border-color: var(--violet2); background: rgba(124,58,237,0.08); }
+  .sec-icon { font-size: 1.5rem; }
+  .sec-title { font-size: 0.78rem; font-weight: 600; color: var(--text-1); margin-bottom: 0.25rem; }
+  .sec-sub { font-size: 0.62rem; color: var(--text-2); }
+
+  /* ════════════════════════ SCREENSHOTS ════════════════════════ */
+  #screenshots {
+    padding: 10rem 0;
+    background: linear-gradient(to bottom, var(--ink), #080615 50%, var(--ink));
+    overflow: hidden;
+    position: relative;
+  }
+  #screenshots::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 50%, rgba(124,58,237,0.05) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 50% at 80% 50%, rgba(34,211,238,0.03) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .ss-filmstrip-wrap {
+    position: relative;
+    margin-top: 4rem;
+  }
+
+  .ss-filmstrip-top, .ss-filmstrip-bottom {
+    height: 28px;
+    background: #040210;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0;
+    overflow: hidden;
+    position: relative;
+    z-index: 2;
+  }
+  .ss-sprocket-row {
+    display: flex;
+    gap: 16px;
+    padding: 0 8px;
+    animation: sprocket-scroll 12s linear infinite;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .ss-sprocket-row2 { animation-delay: -6s; }
+  @keyframes sprocket-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .ss-hole {
+    width: 14px; height: 10px;
+    background: var(--deep);
+    border: 1px solid rgba(124,58,237,0.1);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .ss-viewport {
+    overflow: hidden;
+    background: #050312;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    position: relative;
+  }
+  .ss-track {
+    display: flex;
+    transition: transform 0.6s cubic-bezier(0.77, 0, 0.18, 1);
+    will-change: transform;
+  }
+  .ss-slide {
+    flex: 0 0 100%;
+    position: relative;
+    cursor: pointer;
+  }
+  .ss-slide-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    height: 400px;
+  }
+  .ss-img-pane {
+    position: relative;
+    overflow: hidden;
+    background: #040210;
+  }
+  .ss-img-pane img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform 0.6s ease, filter 0.4s ease;
+    filter: saturate(0.9) brightness(0.92);
+    display: block;
+  }
+  .ss-slide:hover .ss-img-pane img {
+    transform: scale(1.04);
+    filter: saturate(1.1) brightness(1);
+  }
+  .ss-img-pane::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(124,58,237,0.07) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .ss-img-pane::before {
+    content: '⊕';
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    font-size: 2.5rem;
+    color: rgba(255,255,255,0.8);
+    z-index: 3;
+    transition: transform 0.3s ease, opacity 0.3s;
+    opacity: 0;
+    pointer-events: none;
+    text-shadow: 0 0 20px rgba(124,58,237,0.9);
+  }
+  .ss-slide:hover .ss-img-pane::before {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+
+  .ss-info-pane {
+    padding: 3rem 3.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: var(--panel);
+    border-left: 1px solid var(--border2);
+    position: relative;
+    overflow: hidden;
+  }
+  .ss-info-pane::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(to right, var(--violet), transparent);
+  }
+  .ss-slide-num {
+    font-size: 5rem; font-weight: 900;
+    font-family: 'Playfair Display', serif;
+    color: var(--violet2);
+    opacity: 0.07;
+    position: absolute; bottom: -1rem; right: 1.5rem;
+    line-height: 1;
+    user-select: none;
+    transition: opacity 0.3s;
+  }
+  .ss-slide:hover .ss-slide-num { opacity: 0.14; }
+  .ss-slide-label {
+    font-size: 0.58rem; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--cyan); margin-bottom: 0.8rem;
+  }
+  .ss-slide-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem; font-weight: 700;
+    color: var(--text-1); line-height: 1.2;
+    margin-bottom: 1rem;
+  }
+  .ss-slide-desc {
+    font-size: 0.74rem; color: var(--text-2); line-height: 2;
+  }
+  .ss-slide-tag {
+    display: inline-block; margin-top: 1.5rem;
+    background: rgba(124,58,237,0.1);
+    border: 1px solid rgba(159,95,252,0.3);
+    color: var(--amethyst);
+    font-size: 0.58rem; letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 0.3rem 0.8rem;
+  }
+
+  .ss-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 1.8rem;
+    background: #06040f;
+    border: 1px solid var(--border);
+    border-top: none;
+  }
+  .ss-dots {
+    display: flex; gap: 0.5rem; align-items: center;
+  }
+  .ss-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.25s, transform 0.25s;
+    cursor: pointer;
+  }
+  .ss-dot.active {
+    background: var(--violet2);
+    transform: scale(1.5);
+  }
+  .ss-arrows { display: flex; gap: 0.75rem; }
+  .ss-btn {
+    width: 36px; height: 36px;
+    background: var(--panel);
+    border: 1px solid var(--border2);
+    color: var(--text-2);
+    font-size: 1rem;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    user-select: none;
+  }
+  .ss-btn:hover {
+    border-color: var(--violet2);
+    color: var(--text-1);
+    background: rgba(124,58,237,0.1);
+  }
+  .ss-counter {
+    font-size: 0.6rem; letter-spacing: 0.15em;
+    color: var(--text-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .ss-counter .ss-cur { color: var(--amethyst); }
+  .ss-progress-bar {
+    position: absolute; bottom: 0; left: 0;
+    height: 2px;
+    background: var(--violet);
+    transition: width 0s linear;
+    opacity: 0.9;
+  }
+
+  /* ── Lightbox ── */
+  .ss-lightbox {
+    position: fixed; inset: 0;
+    background: rgba(3,2,10,0.97);
+    z-index: 9995;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s ease;
+    backdrop-filter: blur(8px);
+  }
+  .ss-lightbox.open { opacity: 1; pointer-events: all; }
+  .ss-lb-inner {
+    position: relative;
+    max-width: 90vw; max-height: 90vh;
+    display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
+  }
+  .ss-lb-img-wrap {
+    position: relative;
+    border: 1px solid var(--border2);
+    box-shadow: 0 0 0 1px rgba(124,58,237,0.25), 0 40px 80px rgba(0,0,0,0.9), 0 0 60px rgba(124,58,237,0.1);
+    overflow: hidden;
+  }
+  .ss-lb-img-wrap img {
+    display: block;
+    max-width: 85vw; max-height: 75vh;
+    object-fit: contain;
+  }
+  .ss-lb-caption {
+    font-size: 0.72rem; letter-spacing: 0.1em;
+    color: var(--text-2); text-align: center;
+  }
+  .ss-lb-caption strong { color: var(--amethyst); font-style: italic; }
+  .ss-lb-close {
+    position: absolute; top: -3rem; right: 0;
+    width: 36px; height: 36px;
+    background: var(--panel); border: 1px solid var(--border2);
+    color: var(--text-2);
+    font-size: 1.1rem;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .ss-lb-close:hover { border-color: var(--violet2); color: var(--text-1); }
+  .ss-lb-nav {
+    position: absolute;
+    top: 50%; transform: translateY(-50%);
+    width: 44px; height: 44px;
+    background: rgba(6,4,16,0.9);
+    border: 1px solid var(--border2);
+    color: var(--text-2); font-size: 1.2rem;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    z-index: 2;
+  }
+  .ss-lb-nav:hover { border-color: var(--violet2); color: var(--text-1); }
+  .ss-lb-prev { left: -3.5rem; }
+  .ss-lb-next { right: -3.5rem; }
+
+  /* ════════════════════════ GLITCH ════════════════════════ */
+  .glitch {
+    position: relative;
+    display: inline-block;
+  }
+  .glitch::before, .glitch::after {
+    content: attr(data-text);
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    font: inherit;
+    color: inherit;
+    background: transparent;
+  }
+  .glitch::before {
+    left: 2px; top: 1px;
+    color: var(--cyan2);
+    animation: glitch1 4s infinite;
+    clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%);
+    opacity: 0.65;
+  }
+  .glitch::after {
+    left: -2px; top: 2px;
+    color: #e879f9;
+    animation: glitch2 4s infinite;
+    clip-path: polygon(0 55%, 100% 55%, 100% 100%, 0 100%);
+    opacity: 0.65;
+  }
+  @keyframes glitch1 {
+    0%,90%,100% { transform: translate(0); opacity: 0; }
+    91% { transform: translate(-3px, 1px); opacity: 0.65; }
+    93% { transform: translate(3px, -1px); opacity: 0.65; }
+    95% { transform: translate(0); opacity: 0; }
+  }
+  @keyframes glitch2 {
+    0%,90%,100% { transform: translate(0); opacity: 0; }
+    92% { transform: translate(3px, 2px); opacity: 0.65; }
+    94% { transform: translate(-3px, -1px); opacity: 0.65; }
+    96% { transform: translate(0); opacity: 0; }
+  }
+
+  /* ════════════════════════ SCROLL REVEAL ════════════════════════ */
+  .reveal {
+    opacity: 0; transform: translateY(30px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+  .reveal-delay-1 { transition-delay: 0.1s; }
+  .reveal-delay-2 { transition-delay: 0.2s; }
+  .reveal-delay-3 { transition-delay: 0.3s; }
+  .reveal-delay-4 { transition-delay: 0.4s; }
+
+  /* ════════════════════════ FOOTER ════════════════════════ */
+  footer {
+    padding: 6rem 0 4rem;
+    background: var(--ink);
+    border-top: 1px solid var(--border);
+  }
+  .footer-inner {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 4rem;
+  }
+  .footer-brand {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem; font-weight: 900;
+    color: var(--text-1);
+    margin-bottom: 1rem;
+  }
+  .footer-brand span { color: var(--violet2); font-style: italic; }
+  .footer-tagline {
+    font-size: 0.72rem; color: var(--text-2); line-height: 2;
+    max-width: 300px;
+  }
+  .footer-col-title {
+    font-size: 0.58rem; letter-spacing: 0.25em; text-transform: uppercase;
+    color: var(--cyan); margin-bottom: 1.5rem;
+  }
+  .footer-links { list-style: none; display: flex; flex-direction: column; gap: 0.7rem; }
+  .footer-links a {
+    font-size: 0.74rem; color: var(--text-2);
+    text-decoration: none;
+    transition: color 0.2s;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+  }
+  .footer-links a::before { content: '→'; color: var(--muted); font-size: 0.65rem; transition: color 0.2s, transform 0.2s; }
+  .footer-links a:hover { color: var(--text-1); }
+  .footer-links a:hover::before { color: var(--violet2); transform: translateX(3px); }
+  .footer-bottom {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.62rem; color: var(--text-3);
+  }
+  .footer-bottom .mit { color: var(--gold); }
+
+  /* ════════════════════════ RESPONSIVE ════════════════════════ */
+  @media (max-width: 900px) {
+    .ss-slide-inner { grid-template-columns: 1fr; height: auto; }
+    .ss-img-pane { height: 240px; }
+    .ss-info-pane { padding: 2rem; }
+    .ss-lb-prev { left: -2rem; }
+    .ss-lb-next { right: -2rem; }
+    .features-manga { grid-template-columns: 1fr; }
+    .manga-panel.large { grid-column: span 1; grid-template-columns: 1fr; }
+    .arch-diagram { grid-template-columns: 1fr; }
+    .arch-arrow { display: none; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .stat-item:nth-child(2) { border-right: none; }
+    .steps-timeline::before { left: 30px; }
+    .step { grid-template-columns: 60px 1fr; }
+    .step:nth-child(odd) .step-content,
+    .step:nth-child(even) .step-content { grid-column: 2; text-align: left; }
+    .step:nth-child(odd) .step-void,
+    .step:nth-child(even) .step-void { grid-column: 1; }
+    .step:nth-child(odd) .step-visual,
+    .step:nth-child(even) .step-visual { display: none; }
+    .stack-grid { grid-template-columns: 1fr 1fr; }
+    .footer-inner { grid-template-columns: 1fr; gap: 2rem; }
+    .footer-bottom { flex-direction: column; gap: 1rem; text-align: center; }
+    .vn-box { display: none; }
+  }
+  @media (max-width: 600px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .stat-item { border-right: none; border-bottom: 1px solid var(--border); }
+    .stack-grid { grid-template-columns: 1fr; }
+    .hero-title { font-size: 3.5rem; }
+    .security-inner { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Custom cursor -->
+<div class="cursor-dot" id="cursorDot"></div>
+<div class="cursor-ring" id="cursorRing"></div>
+
+<!-- ════════════════════════ HERO ════════════════════════ -->
+<section id="hero">
+  <div class="star-field" id="starField"></div>
+  <div class="nebula nebula-1"></div>
+  <div class="nebula nebula-2"></div>
+  <div class="nebula nebula-3"></div>
+
+  <div class="vn-box vn-box-1">
+    <span class="speaker">System</span>
+    Your library is now scanning...<br>
+    <span style="color:var(--cyan)">✓</span> 42 visual novels found.<br>
+    <span style="color:var(--gold)">⟶</span> VNDB enrichment complete.
+  </div>
+  <div class="vn-box vn-box-2">
+    <span class="speaker">Build Worker</span>
+    Compiling web distribution...<br>
+    <span style="color:var(--cyan)">✓</span> WebAssembly build done.<br>
+    <span style="color:var(--gold)">⟶</span> 47% smaller than original.
+  </div>
+
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Self-hosted · Docker-native · Open source</div>
+    <h1 class="hero-title">
+      <span class="glow-word glitch" data-text="VNoctis">VNoctis</span>
+      <span class="accent">Manager</span>
+    </h1>
+    <p class="hero-subtitle">
+      Your visual novel collection, beautifully managed — metadata enriched, web-built, browser-playable.
+    </p>
+    <div class="hero-cta-row">
+      <a href="#quickstart" class="btn-primary">Quick Start</a>
+      <a href="https://github.com/starrlord/VNoctis" target="_blank" rel="noopener" class="btn-ghost">View on GitHub</a>
+    </div>
+  </div>
+
+  <div class="scroll-hint">
+    <div class="scroll-hint-line"></div>
+    scroll
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════ FEATURES ════════════════════════ -->
+<section id="features">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">What's inside</span>
+      <h2 class="section-title">Every chapter of<br><em>your library, written</em></h2>
+      <p class="section-desc">VNoctis covers everything from metadata enrichment to in-browser play — no cloud required.</p>
+    </div>
+
+    <div class="features-manga">
+      <div class="manga-panel reveal">
+        <span class="panel-icon">🎴</span>
+        <div class="panel-title">Netflix-style Library</div>
+        <p class="panel-desc">Responsive card grid with banner cover art, skeleton states, search, multi-filter, sort, pagination, and live directory watching. Your entire collection at a glance.</p>
+        <span class="panel-tag">Full-text search</span>
+        <div class="panel-num">01</div>
+      </div>
+
+      <div class="manga-panel reveal reveal-delay-1">
+        <span class="panel-icon">🌐</span>
+        <div class="panel-title">VNDB &amp; Steam Metadata</div>
+        <p class="panel-desc">Fuzzy-matches game folders to VNDB entries for cover art, ratings, tags, and playtimes — or link any game to a Steam app ID to pull capsule art, description, Metacritic score, and genres instead.</p>
+        <span class="panel-tag">Two metadata sources</span>
+        <div class="panel-num">02</div>
+      </div>
+
+      <div class="manga-panel large reveal">
+        <div>
+          <span class="panel-icon">🔨</span>
+          <div class="panel-title">One-Click WebAssembly Build</div>
+          <p class="panel-desc">Point at any Ren'Py game and compile a full WebAssembly web distribution with live SSE log streaming, queue management, cancel/retry support, and a full-screen log viewer with color-coding and filtering.</p>
+          <span class="panel-tag">Ren'Py SDK auto-download</span>
+          <span class="panel-tag" style="margin-left:0.5rem">Live log streaming</span>
+        </div>
+        <div style="background:var(--panel2);border:1px solid var(--border2);padding:1.5rem;position:relative;">
+          <div style="font-size:0.58rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--amethyst);margin-bottom:1rem;">Build log · MyVisualNovel</div>
+          <div style="font-size:0.66rem;line-height:2;color:var(--text-2);font-family:'JetBrains Mono',monospace;">
+            <div><span style="color:var(--text-4)">[09:14:02]</span> Creating symlink overlay...</div>
+            <div><span style="color:var(--text-4)">[09:14:03]</span> <span style="color:var(--cyan)">✓</span> Compressing 248 images</div>
+            <div><span style="color:var(--text-4)">[09:14:18]</span> Running web_build...</div>
+            <div><span style="color:var(--text-4)">[09:15:44]</span> <span style="color:var(--gold)">⟶</span> Packaging WASM...</div>
+            <div><span style="color:var(--text-4)">[09:16:02]</span> <span style="color:var(--cyan)">✓</span> Build complete (43% smaller)</div>
+          </div>
+          <div style="position:absolute;top:1rem;right:1rem;font-size:0.55rem;padding:0.2rem 0.6rem;background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.25);color:var(--cyan)">DONE</div>
+        </div>
+        <div class="panel-num">03</div>
+      </div>
+
+      <div class="manga-panel reveal reveal-delay-2">
+        <span class="panel-icon">🗜️</span>
+        <div class="panel-title">Image Compression</div>
+        <p class="panel-desc">30–60% smaller web builds via a symlink overlay that compresses JPEG, PNG, and WebP without ever touching your originals. Runs parallel workers for speed.</p>
+        <span class="panel-tag">Original files untouched</span>
+        <div class="panel-num">04</div>
+      </div>
+
+      <div class="manga-panel reveal reveal-delay-3">
+        <span class="panel-icon">▶️</span>
+        <div class="panel-title">In-Browser Player</div>
+        <p class="panel-desc">Full-screen iframe player with chrome bar, mobile orientation hints, and progressive asset downloads so GUI loads instantly while music and art stream on demand.</p>
+        <span class="panel-tag">Progressive downloads</span>
+        <div class="panel-num">05</div>
+      </div>
+
+      <div class="manga-panel reveal">
+        <span class="panel-icon">📦</span>
+        <div class="panel-title">Game Import</div>
+        <p class="panel-desc">Upload .zip, .tar.bz2, or .rar archives via drag-and-drop — or paste a URL for server-side download with real-time NDJSON progress streaming back to your browser.</p>
+        <span class="panel-tag">Up to 24 GB archives</span>
+        <div class="panel-num">06</div>
+      </div>
+
+      <div class="manga-panel reveal reveal-delay-1">
+        <span class="panel-icon">🔐</span>
+        <div class="panel-title">Multi-User Authentication</div>
+        <p class="panel-desc">Database-backed accounts with bcrypt password hashing, admin and viewer roles, persistent JWT sessions, login rate limiting, and an admin panel for creating, editing, and deleting users.</p>
+        <span class="panel-tag">Admin &amp; viewer roles</span>
+        <div class="panel-num">07</div>
+      </div>
+
+      <div class="manga-panel reveal reveal-delay-2">
+        <span class="panel-icon">❤️</span>
+        <div class="panel-title">Favorites</div>
+        <p class="panel-desc">Mark games as favorites with a heart icon on library cards and detail modals. Per-user favorites persist across devices via the database, with a dedicated gallery row and one-click filter.</p>
+        <span class="panel-tag">Per-user · Persisted</span>
+        <div class="panel-num">08</div>
+      </div>
+
+      <div class="manga-panel reveal reveal-delay-3">
+        <span class="panel-icon">🎮</span>
+        <div class="panel-title">Steam Integration</div>
+        <p class="panel-desc">Search the Steam catalog by name, link any game to a Steam app ID, and pull library capsule art, description, developer, release date, genres, screenshots, and Metacritic score.</p>
+        <span class="panel-tag">Metacritic score</span>
+        <div class="panel-num">09</div>
+      </div>
+
+      <div class="manga-panel reveal">
+        <span class="panel-icon">🌙</span>
+        <div class="panel-title">Dark / Light Theme</div>
+        <p class="panel-desc">System-aware theme toggle with manual override, animated star-field in dark mode, and a fully responsive design from mobile to ultrawide.</p>
+        <span class="panel-tag">Star-field animation</span>
+        <div class="panel-num">10</div>
+      </div>
+
+      <div class="manga-panel reveal reveal-delay-1">
+        <span class="panel-icon">👁️</span>
+        <div class="panel-title">Hide &amp; Unhide Games</div>
+        <p class="panel-desc">Hide games from the library via a hover icon on any card or from the detail modal. A pill badge shows your hidden count with a one-click toggle — plus bulk "Unhide All" to restore everything at once.</p>
+        <span class="panel-tag">Bulk unhide</span>
+        <div class="panel-num">11</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════ STATS ════════════════════════ -->
+<section id="stats">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-item reveal">
+        <div class="stat-num"><span class="unit">3</span></div>
+        <div class="stat-label">Docker services</div>
+      </div>
+      <div class="stat-item reveal reveal-delay-1">
+        <div class="stat-num">60<span class="unit">%</span></div>
+        <div class="stat-label">Smaller web builds</div>
+      </div>
+      <div class="stat-item reveal reveal-delay-2">
+        <div class="stat-num"><span class="unit">∞</span></div>
+        <div class="stat-label">Games supported</div>
+      </div>
+      <div class="stat-item reveal reveal-delay-3">
+        <div class="stat-num">24<span class="unit">GB</span></div>
+        <div class="stat-label">Max import size</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════ SCREENSHOTS ════════════════════════ -->
+<section id="screenshots">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">See it in action</span>
+      <h2 class="section-title">A library built for<br><em>visual novel fans</em></h2>
+      <p class="section-desc">Every screen designed with the same care as the stories you play. Click any frame to open the full view.</p>
+    </div>
+
+    <div class="ss-filmstrip-wrap reveal">
+      <div class="ss-filmstrip-top">
+        <div class="ss-sprocket-row" id="sprocketTop"></div>
+      </div>
+
+      <div class="ss-viewport" id="ssViewport">
+        <div class="ss-track" id="ssTrack">
+          <div class="ss-slide" data-index="0">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/1-gallery-view.png" alt="Gallery View" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 01 · Library</div>
+                <div class="ss-slide-title">Gallery View</div>
+                <p class="ss-slide-desc">Browse your entire visual novel collection in a responsive card grid — cover art, ratings, and build status at a glance. Skeleton loading states keep the experience smooth even on large libraries.</p>
+                <span class="ss-slide-tag">Netflix-style grid</span>
+                <div class="ss-slide-num">01</div>
+              </div>
+            </div>
+          </div>
+          <div class="ss-slide" data-index="1">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/2a-import-game.png" alt="Import Game" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 02 · Import</div>
+                <div class="ss-slide-title">Import a Game</div>
+                <p class="ss-slide-desc">Upload a .zip, .tar.bz2, or .rar archive via drag-and-drop, or paste a remote URL for server-side download. Real-time progress bars track every byte.</p>
+                <span class="ss-slide-tag">Up to 24 GB archives</span>
+                <div class="ss-slide-num">02</div>
+              </div>
+            </div>
+          </div>
+          <div class="ss-slide" data-index="2">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/2b-extracting-game.png" alt="Extracting Game" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 03 · Extraction</div>
+                <div class="ss-slide-title">Real-Time Extraction</div>
+                <p class="ss-slide-desc">Watch the archive unpack in real time. Progress is streamed back via NDJSON events so you always know exactly what's happening — no black box waiting.</p>
+                <span class="ss-slide-tag">Live progress stream</span>
+                <div class="ss-slide-num">03</div>
+              </div>
+            </div>
+          </div>
+          <div class="ss-slide" data-index="3">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/3-edit-metadata.png" alt="Edit Metadata" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 04 · Metadata</div>
+                <div class="ss-slide-title">Edit Metadata</div>
+                <p class="ss-slide-desc">Manually override any field or pull a fresh refresh from VNDB or Steam. Force-link or unlink VNDB / Steam IDs via tabbed search with autocomplete, set custom cover art, and keep your library exactly as you want it.</p>
+                <span class="ss-slide-tag">VNDB &amp; Steam</span>
+                <div class="ss-slide-num">04</div>
+              </div>
+            </div>
+          </div>
+          <div class="ss-slide" data-index="4">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/4-view-game-details.png" alt="Game Details" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 05 · Detail</div>
+                <div class="ss-slide-title">Game Details</div>
+                <p class="ss-slide-desc">Cover art, synopsis, tags, developer, release date, play time estimate, VNDB rating, and a full screenshot gallery — everything surfaced in a single modal.</p>
+                <span class="ss-slide-tag">Screenshot lightbox</span>
+                <div class="ss-slide-num">05</div>
+              </div>
+            </div>
+          </div>
+          <div class="ss-slide" data-index="5">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/5a-building-game.png" alt="Building Game" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 06 · Build</div>
+                <div class="ss-slide-title">WebAssembly Build</div>
+                <p class="ss-slide-desc">One click starts Ren'Py's web_build pipeline. Color-coded log lines stream live via SSE so you can track compilation, image compression, and WASM packaging in real time.</p>
+                <span class="ss-slide-tag">SSE log streaming</span>
+                <div class="ss-slide-num">06</div>
+              </div>
+            </div>
+          </div>
+          <div class="ss-slide" data-index="6">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/5b-building-game.png" alt="Build Queue" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 07 · Queue</div>
+                <div class="ss-slide-title">Build Queue</div>
+                <p class="ss-slide-desc">Queue multiple games for compilation and watch them build in order. Each job shows its progress, status, and estimated time — with cancel and retry support throughout.</p>
+                <span class="ss-slide-tag">Concurrent build control</span>
+                <div class="ss-slide-num">07</div>
+              </div>
+            </div>
+          </div>
+          <div class="ss-slide" data-index="7">
+            <div class="ss-slide-inner">
+              <div class="ss-img-pane"><img src="https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/6-loading-game.png" alt="In-Browser Player" loading="lazy"></div>
+              <div class="ss-info-pane">
+                <div class="ss-slide-label">Screen 08 · Player</div>
+                <div class="ss-slide-title">In-Browser Player</div>
+                <p class="ss-slide-desc">Play your compiled VN right in the browser — no install, no Unity WebGL warnings. Full-screen iframe with chrome bar, mobile orientation hints, and a save-slot warning toast.</p>
+                <span class="ss-slide-tag">WebAssembly · No install</span>
+                <div class="ss-slide-num">08</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ss-progress-bar" id="ssProgress"></div>
+      </div>
+
+      <div class="ss-filmstrip-bottom">
+        <div class="ss-sprocket-row" id="sprocketBot"></div>
+      </div>
+
+      <div class="ss-controls">
+        <div class="ss-dots" id="ssDots"></div>
+        <div class="ss-counter">
+          <span class="ss-cur" id="ssCur">01</span>
+          <span style="color:var(--muted)"> / </span>
+          <span id="ssTotal">08</span>
+        </div>
+        <div class="ss-arrows">
+          <button class="ss-btn" id="ssPrev" aria-label="Previous">←</button>
+          <button class="ss-btn" id="ssNext" aria-label="Next">→</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="ss-lightbox" id="ssLightbox" role="dialog" aria-modal="true" aria-label="Screenshot viewer">
+  <div class="ss-lb-inner">
+    <button class="ss-lb-close" id="ssLbClose" aria-label="Close">✕</button>
+    <div class="ss-lb-img-wrap">
+      <button class="ss-lb-nav ss-lb-prev" id="ssLbPrev" aria-label="Previous image">←</button>
+      <img id="ssLbImg" src="" alt="">
+      <button class="ss-lb-nav ss-lb-next" id="ssLbNext" aria-label="Next image">→</button>
+    </div>
+    <div class="ss-lb-caption" id="ssLbCaption"></div>
+  </div>
+</div>
+
+<!-- ════════════════════════ ARCHITECTURE ════════════════════════ -->
+<section id="architecture">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">System design</span>
+      <h2 class="section-title">Three services,<br><em>one compose command</em></h2>
+      <p class="section-desc">Clean microservice separation across UI, API, and build worker — each scoped to its own responsibility, communicating over an isolated Docker bridge.</p>
+    </div>
+
+    <div class="arch-diagram reveal">
+      <div class="arch-service">
+        <span class="arch-port">:80</span>
+        <div class="arch-name">vnm-ui</div>
+        <div class="arch-stack">React 19 · Vite 6 · Tailwind · Nginx</div>
+        <div class="arch-role">SPA frontend — library, search, filter, player, build queue, log viewer</div>
+        <div class="arch-volumes">
+          <span class="vol-pill">/web-builds</span>
+          <span class="vol-pill">/covers</span>
+          <span class="vol-pill">/screenshots</span>
+        </div>
+      </div>
+      <div class="arch-arrow">
+        <div class="arch-arrow-line">
+          <span class="arch-arrow-label">REST + SSE</span>
+        </div>
+      </div>
+      <div class="arch-service" style="border-color:var(--violet2);box-shadow:0 0 40px rgba(124,58,237,0.12)">
+        <span class="arch-port">:3001</span>
+        <div class="arch-name">vnm-api</div>
+        <div class="arch-stack">Node.js 24 · Fastify 5 · Prisma · SQLite</div>
+        <div class="arch-role">REST API — scanning, VNDB enrichment, cover caching, build orchestration</div>
+        <div class="arch-volumes">
+          <span class="vol-pill">/data</span>
+          <span class="vol-pill">/covers</span>
+          <span class="vol-pill">/games</span>
+        </div>
+      </div>
+      <div class="arch-arrow">
+        <div class="arch-arrow-line">
+          <span class="arch-arrow-label">HTTP callbacks</span>
+        </div>
+      </div>
+      <div class="arch-service">
+        <span class="arch-port">:3002</span>
+        <div class="arch-name">vnm-builder</div>
+        <div class="arch-stack">Python 3.11 · FastAPI</div>
+        <div class="arch-role">Build worker — Ren'Py SDK compilation to WebAssembly, queue + concurrency control</div>
+        <div class="arch-volumes">
+          <span class="vol-pill">/web-builds</span>
+          <span class="vol-pill">/games</span>
+          <span class="vol-pill">/renpy-sdk</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ════════════════════════ HOW IT WORKS ════════════════════════ -->
+<section id="how">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Getting started</span>
+      <h2 class="section-title">From zero to<br><em>playing in minutes</em></h2>
+    </div>
+
+    <div class="steps-timeline">
+      <div class="step">
+        <div class="step-content reveal">
+          <div class="step-num-label">Step 01</div>
+          <div class="step-title">Configure &amp; Launch</div>
+          <p class="step-desc">Set <code style="color:var(--amethyst)">VNM_ROOT</code> and <code style="color:var(--amethyst)">VNM_ADMIN_PASSWORD</code> in your <code style="color:var(--cyan)">.env</code> file. All sub-paths derive automatically. Then run a single compose command — the Ren'Py SDK downloads itself on first boot.</p>
+        </div>
+        <div class="step-void"><div class="step-node">01</div></div>
+        <div class="step-visual reveal reveal-delay-2">
+          <div class="step-card">
+            <div class="step-card-title">.env</div>
+            <div class="code-line"><span class="lnum">1</span><span class="cmt"># Required</span></div>
+            <div class="code-line"><span class="lnum">2</span><span class="kw">VNM_ROOT</span>=<span class="str">/mnt/user/appdata/vnm</span></div>
+            <div class="code-line"><span class="lnum">3</span><span class="kw">VNM_ADMIN_PASSWORD</span>=<span class="str">your-password</span></div>
+            <div class="code-line"><span class="lnum">4</span><span class="cmt"># Optional</span></div>
+            <div class="code-line"><span class="lnum">5</span><span class="kw">HOST_PORT</span>=<span class="str">6773</span></div>
+            <div class="code-line"><span class="lnum">6</span><span class="kw">RENPY_SDK_VERSION</span>=<span class="str">8.5.2</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-visual reveal">
+          <div class="step-card">
+            <div class="step-card-title">Library scan output</div>
+            <div class="code-line"><span class="lnum">→</span><span style="color:var(--cyan)">Found</span> <span class="kw">MyFavoriteVN</span></div>
+            <div class="code-line"><span class="lnum">→</span><span style="color:var(--cyan)">Found</span> <span class="kw">AnotherGame</span></div>
+            <div class="code-line"><span class="lnum">→</span><span style="color:var(--gold)">VNDB</span> matched · score 0.94</div>
+            <div class="code-line"><span class="lnum">→</span><span style="color:var(--cyan)">Cover</span> downloaded ✓</div>
+            <div class="code-line"><span class="lnum">→</span><span style="color:var(--cyan)">Tags</span> enriched ✓</div>
+          </div>
+        </div>
+        <div class="step-void"><div class="step-node">02</div></div>
+        <div class="step-content reveal reveal-delay-2">
+          <div class="step-num-label">Step 02</div>
+          <div class="step-title">Auto-discover &amp; Enrich</div>
+          <p class="step-desc">VNoctis scans your games directory and fuzzy-matches each title against VNDB. Cover art, synopses, ratings, screenshots, and tags are fetched and cached automatically. No manual entry needed.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-content reveal">
+          <div class="step-num-label">Step 03</div>
+          <div class="step-title">Build &amp; Play</div>
+          <p class="step-desc">Click Build on any game card. The builder compiles a WebAssembly web distribution, compresses images up to 60% smaller, generates progressive download rules, and serves it in the in-browser player — all without leaving the UI.</p>
+        </div>
+        <div class="step-void"><div class="step-node">03</div></div>
+        <div class="step-visual reveal reveal-delay-2">
+          <div class="step-card">
+            <div class="step-card-title">Progressive download rules</div>
+            <div class="code-line"><span class="lnum">1</span><span class="cmt"># GUI stays bundled</span></div>
+            <div class="code-line"><span class="lnum">2</span><span class="kw">-</span> image <span class="str">game/gui/**</span></div>
+            <div class="code-line"><span class="lnum">3</span><span class="cmt"># Backgrounds stream</span></div>
+            <div class="code-line"><span class="lnum">4</span><span class="kw">+</span> image <span class="str">game/**</span></div>
+            <div class="code-line"><span class="lnum">5</span><span class="kw">+</span> music <span class="str">game/audio/**</span></div>
+            <div class="code-line"><span class="lnum">6</span><span class="kw">+</span> voice <span class="str">game/voice/**</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════ TECH STACK ════════════════════════ -->
+<section id="stack">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Technology</span>
+      <h2 class="section-title">Built on a<br><em>modern foundation</em></h2>
+    </div>
+
+    <div class="stack-grid reveal">
+      <div class="stack-item">
+        <div class="stack-emoji">⚛️</div>
+        <div class="stack-info">
+          <div class="stack-name">React 19 + Vite 6</div>
+          <div class="stack-role">Frontend · vnm-ui</div>
+          <div class="stack-desc">Tailwind CSS v4 for styling, React hooks for state, Nginx for static file serving and API proxying.</div>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-emoji">⚡</div>
+        <div class="stack-info">
+          <div class="stack-name">Fastify 5</div>
+          <div class="stack-role">API Server · vnm-api</div>
+          <div class="stack-desc">Node.js 24, Prisma ORM, SQLite — fast schema-driven REST with SSE log streaming and JWT auth.</div>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-emoji">🐍</div>
+        <div class="stack-info">
+          <div class="stack-name">FastAPI</div>
+          <div class="stack-role">Build Worker · vnm-builder</div>
+          <div class="stack-desc">Python 3.11, Pillow, pngquant, jpegoptim — async build queue with concurrent job control.</div>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-emoji">🗃️</div>
+        <div class="stack-info">
+          <div class="stack-name">SQLite + Prisma</div>
+          <div class="stack-role">Database</div>
+          <div class="stack-desc">Zero-dependency embedded DB with typed Prisma schema, migrations, and persistent named volumes.</div>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-emoji">🐳</div>
+        <div class="stack-info">
+          <div class="stack-name">Docker Compose</div>
+          <div class="stack-role">Containerisation</div>
+          <div class="stack-desc">Health checks, resource limits, network isolation, named volumes. One command to rule them all.</div>
+        </div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-emoji">📡</div>
+        <div class="stack-info">
+          <div class="stack-name">VNDB API</div>
+          <div class="stack-role">Metadata Source</div>
+          <div class="stack-desc">Kana API with configurable rate limiting, fuzzy match threshold, and optional API token for higher limits.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════ QUICK START ════════════════════════ -->
+<section id="quickstart">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="section-label">Quick start</span>
+      <h2 class="section-title">Up and running<br><em>in four commands</em></h2>
+    </div>
+
+    <div class="terminal reveal">
+      <div class="terminal-bar">
+        <div class="term-dot term-dot-r"></div>
+        <div class="term-dot term-dot-y"></div>
+        <div class="term-dot term-dot-g"></div>
+        <span class="term-title">bash — vnoctis-manager</span>
+      </div>
+      <div class="term-body">
+        <div class="term-line"><span class="term-comment"># 1. Clone the repository</span></div>
+        <div class="term-line">
+          <span class="term-prompt">$</span>
+          <span class="term-cmd">git clone https://github.com/starrlord/VNoctis &amp;&amp; cd VNoctis</span>
+        </div>
+        <br>
+        <div class="term-line"><span class="term-comment"># 2. Configure environment (set VNM_ROOT + VNM_ADMIN_PASSWORD)</span></div>
+        <div class="term-line">
+          <span class="term-prompt">$</span>
+          <span class="term-cmd">cp .env.example .env &amp;&amp; nano .env</span>
+        </div>
+        <br>
+        <div class="term-line"><span class="term-comment"># 3. Launch (SDK auto-downloads on first boot)</span></div>
+        <div class="term-line">
+          <span class="term-prompt">$</span>
+          <span class="term-cmd">docker compose up -d</span>
+        </div>
+        <br>
+        <div class="term-output">Creating network "vn-manager_default"</div>
+        <div class="term-output">Creating vnm-api ... <span class="term-success">done</span></div>
+        <div class="term-output">Creating vnm-builder ... <span class="term-success">done</span></div>
+        <div class="term-output">Creating vnm-ui ... <span class="term-success">done</span></div>
+        <br>
+        <div class="term-line"><span class="term-comment"># 4. Open in browser</span></div>
+        <div class="term-line">
+          <span class="term-prompt">$</span>
+          <span class="term-cmd">open http://localhost:6773</span>
+          <span class="typewriter-cursor"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════ SECURITY ════════════════════════ -->
+<div class="security-strip">
+  <div class="container">
+    <div class="security-inner">
+      <div class="sec-badge reveal">
+        <span class="sec-icon">🔑</span>
+        <div class="sec-text">
+          <div class="sec-title">Multi-User Auth</div>
+          <div class="sec-sub">bcrypt · JWT · Admin &amp; viewer roles</div>
+        </div>
+      </div>
+      <div class="sec-badge reveal reveal-delay-1">
+        <span class="sec-icon">🛡️</span>
+        <div class="sec-text">
+          <div class="sec-title">Network Isolated</div>
+          <div class="sec-sub">Docker bridge · Internal service mesh</div>
+        </div>
+      </div>
+      <div class="sec-badge reveal reveal-delay-2">
+        <span class="sec-icon">📋</span>
+        <div class="sec-text">
+          <div class="sec-title">Security Audited</div>
+          <div class="sec-sub">Detailed report in README_Security.md</div>
+        </div>
+      </div>
+      <div class="sec-badge reveal reveal-delay-3">
+        <span class="sec-icon">🗂️</span>
+        <div class="sec-text">
+          <div class="sec-title">Files Never Modified</div>
+          <div class="sec-sub">Symlink overlay · Originals untouched</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ FOOTER ════════════════════════ -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div>
+        <div class="footer-brand">VN<span>octis</span></div>
+        <p class="footer-tagline">A self-hosted, Docker-native visual novel library manager with VNDB enrichment, WebAssembly builds, and an in-browser player. Built for the visual novel community.</p>
+      </div>
+      <div>
+        <div class="footer-col-title">Navigation</div>
+        <ul class="footer-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#screenshots">Screenshots</a></li>
+          <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#how">How It Works</a></li>
+          <li><a href="#stack">Tech Stack</a></li>
+          <li><a href="#quickstart">Quick Start</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="footer-col-title">Resources</div>
+        <ul class="footer-links">
+          <li><a href="https://github.com/starrlord/VNoctis" target="_blank" rel="noopener">GitHub Repository</a></li>
+          <li><a href="https://github.com/starrlord/VNoctis/blob/main/README_Security.md" target="_blank" rel="noopener">Security Audit</a></li>
+          <li><a href="https://github.com/starrlord/VNoctis/blob/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://vndb.org" target="_blank" rel="noopener">VNDB API</a></li>
+          <li><a href="https://www.renpy.org" target="_blank" rel="noopener">Ren'Py Engine</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>VNoctis Manager — Self-hosted visual novel library</span>
+      <span>Licensed under <span class="mit">MIT</span> · Built with ❤️ for VN fans</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // ── Cursor ──
+  const dot = document.getElementById('cursorDot');
+  const ring = document.getElementById('cursorRing');
+  let mx = -100, my = -100, rx = -100, ry = -100;
+  document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+  const interactives = 'a, button, .manga-panel, .arch-service, .stack-item, .stat-item, .ss-slide, .ss-btn, .ss-dot';
+  document.querySelectorAll(interactives).forEach(el => {
+    el.addEventListener('mouseenter', () => ring.classList.add('hovered'));
+    el.addEventListener('mouseleave', () => ring.classList.remove('hovered'));
+  });
+  function animCursor() {
+    rx += (mx - rx) * 0.14;
+    ry += (my - ry) * 0.14;
+    dot.style.left = mx + 'px'; dot.style.top = my + 'px';
+    ring.style.left = rx + 'px'; ring.style.top = ry + 'px';
+    requestAnimationFrame(animCursor);
+  }
+  animCursor();
+
+  // ── Stars ──
+  const sf = document.getElementById('starField');
+  for (let i = 0; i < 180; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    const size = Math.random() * 2.5 + 0.4;
+    s.style.cssText = `
+      width:${size}px; height:${size}px;
+      left:${Math.random()*100}%;
+      top:${Math.random()*100}%;
+      --dur:${3 + Math.random()*6}s;
+      --delay:${-Math.random()*8}s;
+      --min-op:${0.06 + Math.random()*0.1};
+      --max-op:${0.5 + Math.random()*0.5};
+    `;
+    sf.appendChild(s);
+  }
+
+  // ── Scroll reveal ──
+  const reveals = document.querySelectorAll('.reveal');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
+  }, { threshold: 0.12 });
+  reveals.forEach(el => obs.observe(el));
+
+  // ── Screenshots Carousel ──
+  const slides = document.querySelectorAll('.ss-slide');
+  const track  = document.getElementById('ssTrack');
+  const dotsEl = document.getElementById('ssDots');
+  const curEl  = document.getElementById('ssCur');
+  const progress = document.getElementById('ssProgress');
+  const TOTAL  = slides.length;
+  let cur = 0, autoTimer = null;
+
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'ss-dot' + (i === 0 ? ' active' : '');
+    d.addEventListener('click', () => goTo(i));
+    dotsEl.appendChild(d);
+  });
+
+  function buildSprockets(id) {
+    const row = document.getElementById(id);
+    if (!row) return;
+    for (let i = 0; i < 120; i++) {
+      const h = document.createElement('div');
+      h.className = 'ss-hole';
+      row.appendChild(h);
+    }
+    [...row.children].forEach(c => row.appendChild(c.cloneNode(true)));
+  }
+  buildSprockets('sprocketTop');
+  buildSprockets('sprocketBot');
+
+  function goTo(idx) {
+    cur = (idx + TOTAL) % TOTAL;
+    track.style.transform = `translateX(-${cur * 100}%)`;
+    document.querySelectorAll('.ss-dot').forEach((d, i) => d.classList.toggle('active', i === cur));
+    curEl.textContent = String(cur + 1).padStart(2, '0');
+    startProgress();
+  }
+
+  function startProgress() {
+    clearTimeout(autoTimer);
+    progress.style.transition = 'none';
+    progress.style.width = '0%';
+    progress.offsetWidth;
+    progress.style.transition = 'width 5s linear';
+    progress.style.width = '100%';
+    autoTimer = setTimeout(() => goTo(cur + 1), 5000);
+  }
+
+  document.getElementById('ssNext').addEventListener('click', () => goTo(cur + 1));
+  document.getElementById('ssPrev').addEventListener('click', () => goTo(cur - 1));
+  slides.forEach((slide, i) => slide.addEventListener('click', () => openLightbox(i)));
+
+  let tsX = null;
+  const vp = document.getElementById('ssViewport');
+  vp.addEventListener('touchstart', e => { tsX = e.touches[0].clientX; }, { passive: true });
+  vp.addEventListener('touchend', e => {
+    if (tsX === null) return;
+    const dx = e.changedTouches[0].clientX - tsX;
+    if (Math.abs(dx) > 40) goTo(dx < 0 ? cur + 1 : cur - 1);
+    tsX = null;
+  });
+
+  document.addEventListener('keydown', e => {
+    const lb = document.getElementById('ssLightbox');
+    if (lb.classList.contains('open')) {
+      if (e.key === 'ArrowRight') lbNav(1);
+      if (e.key === 'ArrowLeft')  lbNav(-1);
+      if (e.key === 'Escape') closeLightbox();
+    } else {
+      if (e.key === 'ArrowRight') goTo(cur + 1);
+      if (e.key === 'ArrowLeft')  goTo(cur - 1);
+    }
+  });
+
+  startProgress();
+
+  // ── Lightbox ──
+  const SS_DATA = [
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/1-gallery-view.png',     title: 'Gallery View',        desc: 'Browse your library in a responsive card grid' },
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/2a-import-game.png',     title: 'Import Game',          desc: 'Upload an archive or paste a URL' },
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/2b-extracting-game.png', title: 'Extracting Game',      desc: 'Real-time progress during extraction' },
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/3-edit-metadata.png',    title: 'Edit Metadata',        desc: 'Manually edit or refresh from VNDB' },
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/4-view-game-details.png',title: 'Game Details',         desc: 'Cover art, synopsis, tags, screenshots' },
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/5a-building-game.png',   title: 'Building Game',        desc: 'Live log streaming during WebAssembly build' },
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/5b-building-game.png',   title: 'Build Queue',          desc: 'Progress and queue status' },
+    { src: 'https://raw.githubusercontent.com/starrlord/VNoctis/main/extras/screenshots/6-loading-game.png',     title: 'In-Browser Player',    desc: 'Loading a compiled VN in the browser' },
+  ];
+  let lbIdx = 0;
+  const lb    = document.getElementById('ssLightbox');
+  const lbImg = document.getElementById('ssLbImg');
+  const lbCap = document.getElementById('ssLbCaption');
+
+  function openLightbox(idx) {
+    lbIdx = idx; updateLb();
+    lb.classList.add('open');
+    clearTimeout(autoTimer);
+  }
+  function closeLightbox() {
+    lb.classList.remove('open');
+    startProgress();
+  }
+  function lbNav(dir) {
+    lbIdx = (lbIdx + dir + SS_DATA.length) % SS_DATA.length;
+    updateLb();
+  }
+  function updateLb() {
+    const d = SS_DATA[lbIdx];
+    lbImg.src = d.src; lbImg.alt = d.title;
+    lbCap.innerHTML = `<strong>${d.title}</strong> — ${d.desc}`;
+  }
+
+  document.getElementById('ssLbClose').addEventListener('click', closeLightbox);
+  document.getElementById('ssLbPrev').addEventListener('click', () => lbNav(-1));
+  document.getElementById('ssLbNext').addEventListener('click', () => lbNav(1));
+  lb.addEventListener('click', e => { if (e.target === lb) closeLightbox(); });
+
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const t = document.querySelector(a.getAttribute('href'));
+      if (t) { e.preventDefault(); t.scrollIntoView({ behavior: 'smooth' }); }
+    });
+  });
+</script>
+</body>
+</html>
