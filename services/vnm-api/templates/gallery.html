@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visual Novel Gallery</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f13;
+    --surface: #1a1a24;
+    --border: #2a2a38;
+    --text: #e8e8f0;
+    --muted: #888899;
+    --accent: #7c6af7;
+    --accent-hover: #9580ff;
+    --card-bg: #1e1e2e;
+    --radius: 8px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; min-height: 100dvh; }
+
+  /* ── Header ───────────────────────── */
+  header { position: sticky; top: 0; z-index: 50; background: rgba(15,15,19,0.92); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 0 1.5rem; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-size: 1.1rem; font-weight: 700; color: var(--text); text-decoration: none; }
+  .search-wrap { position: relative; }
+  .search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; width: 16px; height: 16px; }
+  #search { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 6px 12px 6px 34px; font-size: 0.875rem; width: 220px; outline: none; }
+  #search:focus { border-color: var(--accent); }
+  #search::placeholder { color: var(--muted); }
+
+  /* ── Controls ─────────────────────── */
+  .controls { display: flex; gap: 0.75rem; align-items: center; padding: 1rem 1.5rem 0.5rem; flex-wrap: wrap; }
+  .sort-label { font-size: 0.8rem; color: var(--muted); }
+  .sort-btn { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: var(--radius); padding: 5px 12px; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; }
+  .sort-btn:hover, .sort-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .count { margin-left: auto; font-size: 0.8rem; color: var(--muted); }
+
+  /* ── Grid ─────────────────────────── */
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; padding: 1rem 1.5rem 3rem; }
+
+  /* ── Card ─────────────────────────── */
+  .card { background: var(--card-bg); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; border: 1px solid var(--border); }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  .card-img { position: relative; aspect-ratio: 4/3; background: var(--surface); overflow: hidden; }
+  .card-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .card-img .no-cover { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 3rem; font-weight: 700; opacity: 0.15; }
+  .rating-badge { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); color: #fbbf24; font-size: 0.7rem; font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+  .card-info { padding: 8px 10px 10px; }
+  .card-title { font-size: 0.8rem; font-weight: 600; color: var(--text); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 3px; }
+  .card-dev { font-size: 0.7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── Modal ─────────────────────────── */
+  #modal-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 1rem; }
+  #modal-overlay.open { display: flex; }
+  #modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 680px; width: 100%; max-height: 90dvh; overflow-y: auto; }
+  .modal-hero { position: relative; aspect-ratio: 16/9; background: var(--bg); overflow: hidden; border-radius: 12px 12px 0 0; }
+  .modal-hero img { width: 100%; height: 100%; object-fit: cover; }
+  .modal-hero .no-cover { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 6rem; opacity: 0.1; }
+  .modal-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to top, var(--surface) 0%, transparent 60%); display: flex; flex-direction: column; justify-content: flex-end; padding: 1.5rem; }
+  .modal-title { font-size: 1.4rem; font-weight: 700; line-height: 1.2; margin-bottom: 4px; }
+  .modal-original { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
+  .modal-meta { display: flex; gap: 12px; font-size: 0.78rem; color: var(--muted); flex-wrap: wrap; }
+  .modal-meta span { display: flex; align-items: center; gap: 4px; }
+  .modal-body { padding: 1.25rem 1.5rem; }
+  .modal-synopsis { font-size: 0.875rem; line-height: 1.65; color: var(--muted); margin-bottom: 1rem; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1.25rem; }
+  .tag { background: rgba(124,106,247,0.15); color: var(--accent-hover); border: 1px solid rgba(124,106,247,0.3); border-radius: 4px; padding: 2px 8px; font-size: 0.72rem; }
+  .play-btn { display: inline-flex; align-items: center; gap: 8px; background: var(--accent); color: #fff; font-weight: 600; font-size: 0.9rem; text-decoration: none; padding: 10px 24px; border-radius: var(--radius); transition: background 0.15s; border: none; cursor: pointer; }
+  .play-btn:hover { background: var(--accent-hover); }
+  .close-btn { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.5); border: none; color: var(--text); width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; z-index: 10; }
+  .close-btn:hover { background: rgba(0,0,0,0.8); }
+
+  /* ── Player overlay ─────────────────── */
+  #player-overlay { display: none; position: fixed; inset: 0; z-index: 200; background: #000; flex-direction: column; }
+  #player-overlay.open { display: flex; }
+  .player-nav { height: 48px; min-height: 48px; background: rgba(15,15,19,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 1rem; flex-shrink: 0; }
+  .player-nav-left { display: flex; align-items: center; gap: 12px; }
+  .player-nav .library-btn { display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; font-size: 0.85rem; font-weight: 600; padding: 6px 12px; border-radius: 6px; transition: background 0.15s, color 0.15s; background: none; border: none; cursor: pointer; }
+  .player-nav .library-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  .player-nav .library-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .player-nav .game-title { font-size: 0.8rem; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50vw; }
+  #player-iframe { flex: 1; width: 100%; border: none; background: #000; }
+
+  /* ── Empty state ──────────────────── */
+  #empty { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 40vh; color: var(--muted); text-align: center; gap: 0.75rem; }
+  #empty svg { opacity: 0.3; }
+  #empty.show { display: flex; }
+
+  /* ── Footer ───────────────────────── */
+  footer { text-align: center; padding: 1.5rem; font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--border); margin-top: 2rem; }
+
+  @media (max-width: 480px) {
+    #search { width: 140px; }
+    #grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="#" class="logo">🎮 VN Gallery</a>
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <input id="search" type="search" placeholder="Search games…" autocomplete="off">
+  </div>
+</header>
+
+<div class="controls">
+  <span class="sort-label">Sort:</span>
+  <button class="sort-btn active" data-sort="rating">Rating</button>
+  <button class="sort-btn" data-sort="title">Title</button>
+  <button class="sort-btn" data-sort="release">Release</button>
+  <button class="sort-btn" data-sort="recent">Recently Added</button>
+  <span class="count" id="count"></span>
+</div>
+
+<div id="grid"></div>
+<div id="empty">
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+  <p>No games match your search</p>
+</div>
+
+<footer>
+  Generated by VNoctis Manager &middot; <span id="gen-time"></span>
+</footer>
+
+<!-- Detail modal -->
+<div id="modal-overlay" role="dialog" aria-modal="true">
+  <div id="modal">
+    <div class="modal-hero" id="modal-hero">
+      <button class="close-btn" id="modal-close" aria-label="Close">✕</button>
+      <div id="modal-cover"></div>
+      <div class="modal-hero-overlay">
+        <div class="modal-title" id="modal-title"></div>
+        <div class="modal-original" id="modal-original"></div>
+        <div class="modal-meta" id="modal-meta"></div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p class="modal-synopsis" id="modal-synopsis"></p>
+      <div class="tags" id="modal-tags"></div>
+      <button class="play-btn" id="modal-play">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        Play Game
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Player overlay — full-screen iframe with nav bar -->
+<div id="player-overlay">
+  <nav class="player-nav">
+    <div class="player-nav-left">
+      <button class="library-btn" id="player-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>
+        Library
+      </button>
+      <span class="game-title" id="player-title"></span>
+    </div>
+  </nav>
+  <iframe id="player-iframe" title="Game" allow="autoplay; fullscreen" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"></iframe>
+</div>
+
+<script>
+(function () {
+  const DATA = __GALLERY_DATA__;
+  let games = [...DATA.games];
+  let query = '';
+  let sortKey = 'rating';
+
+  document.getElementById('gen-time').textContent =
+    new Date(DATA.generatedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // ── Sort ──────────────────────────────────────────
+  function sorted(arr) {
+    return [...arr].sort((a, b) => {
+      if (sortKey === 'title')   return (a.title || '').localeCompare(b.title || '');
+      if (sortKey === 'release') return (b.releaseDate || '').localeCompare(a.releaseDate || '');
+      if (sortKey === 'recent')  return (b.publishedAt || '').localeCompare(a.publishedAt || '');
+      // rating (default)
+      return (b.rating || 0) - (a.rating || 0);
+    });
+  }
+
+  // ── Filter ────────────────────────────────────────
+  function filtered() {
+    const q = query.toLowerCase();
+    if (!q) return sorted(games);
+    return sorted(games.filter(g =>
+      (g.title || '').toLowerCase().includes(q) ||
+      (g.developer || '').toLowerCase().includes(q) ||
+      (g.synopsis || '').toLowerCase().includes(q)
+    ));
+  }
+
+  // ── Render ────────────────────────────────────────
+  function gradient(title) {
+    let h = 0;
+    for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) & 0xffffffff;
+    const hue = Math.abs(h) % 360;
+    return `linear-gradient(135deg, hsl(${hue},40%,20%), hsl(${(hue+40)%360},35%,30%))`;
+  }
+
+  function formatRating(r) { return r ? (r / 10).toFixed(1) : null; }
+
+  function render() {
+    const list = filtered();
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('empty');
+    const count = document.getElementById('count');
+
+    count.textContent = list.length === games.length
+      ? `${games.length} games`
+      : `${list.length} of ${games.length} games`;
+
+    if (list.length === 0) {
+      grid.innerHTML = '';
+      empty.classList.add('show');
+      return;
+    }
+    empty.classList.remove('show');
+
+    grid.innerHTML = list.map((g, i) => {
+      const rating = formatRating(g.rating);
+      const cover = g.coverUrl
+        ? `<img src="${esc(g.coverUrl)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+        + `<div class="no-cover" style="display:none;background:${gradient(g.title)}">${esc(g.title.charAt(0))}</div>`
+        : `<div class="no-cover" style="background:${gradient(g.title)}">${esc(g.title.charAt(0))}</div>`;
+      return `<div class="card" data-idx="${i}" tabindex="0" role="button" aria-label="${esc(g.title)}">
+        <div class="card-img">
+          ${cover}
+          ${rating ? `<div class="rating-badge">★ ${rating}</div>` : ''}
+        </div>
+        <div class="card-info">
+          <div class="card-title">${esc(g.title)}</div>
+          ${g.developer ? `<div class="card-dev">${esc(g.developer)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    // Attach click handlers
+    grid.querySelectorAll('.card').forEach(el => {
+      const game = list[+el.dataset.idx];
+      el.addEventListener('click', () => openModal(game));
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openModal(game); });
+    });
+  }
+
+  // ── Modal ─────────────────────────────────────────
+  var currentGame = null;
+
+  function openModal(g) {
+    currentGame = g;
+    const overlay = document.getElementById('modal-overlay');
+    document.getElementById('modal-title').textContent = g.title;
+    document.getElementById('modal-original').textContent = g.originalTitle || '';
+    document.getElementById('modal-synopsis').textContent = g.synopsis || 'No synopsis available.';
+
+    const cover = document.getElementById('modal-cover');
+    if (g.coverUrl) {
+      cover.innerHTML = `<img src="${esc(g.coverUrl)}" alt="${esc(g.title)}" style="width:100%;height:100%;object-fit:cover">`;
+    } else {
+      cover.innerHTML = `<div class="no-cover" style="background:${gradient(g.title)};height:100%">${esc(g.title.charAt(0))}</div>`;
+    }
+
+    const meta = [];
+    if (g.rating) meta.push(`<span>★ ${formatRating(g.rating)}</span>`);
+    if (g.developer) meta.push(`<span>${esc(g.developer)}</span>`);
+    if (g.releaseDate) meta.push(`<span>${g.releaseDate.slice(0,4)}</span>`);
+    if (g.lengthMinutes) meta.push(`<span>~${Math.round(g.lengthMinutes/60)}h</span>`);
+    document.getElementById('modal-meta').innerHTML = meta.join('<span style="opacity:.3">·</span>');
+
+    document.getElementById('modal-tags').innerHTML =
+      (g.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+
+    overlay.classList.add('open');
+    document.getElementById('modal-close').focus();
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    currentGame = null;
+  }
+
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  // ── Player overlay ────────────────────────────────
+  function openPlayer(game) {
+    closeModal();
+    var overlay = document.getElementById('player-overlay');
+    document.getElementById('player-title').textContent = game.title;
+    document.getElementById('player-iframe').src = game.playUrl;
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePlayer() {
+    var overlay = document.getElementById('player-overlay');
+    overlay.classList.remove('open');
+    // Remove iframe src to free resources
+    document.getElementById('player-iframe').src = 'about:blank';
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('modal-play').addEventListener('click', function () {
+    if (currentGame) openPlayer(currentGame);
+  });
+
+  document.getElementById('player-back').addEventListener('click', closePlayer);
+
+  // ── Keyboard shortcuts ────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      var playerOverlay = document.getElementById('player-overlay');
+      if (playerOverlay.classList.contains('open')) {
+        closePlayer();
+      } else {
+        closeModal();
+      }
+    }
+  });
+
+  // ── Controls ──────────────────────────────────────
+  document.querySelectorAll('.sort-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      sortKey = btn.dataset.sort;
+      render();
+    });
+  });
+
+  let searchTimer;
+  document.getElementById('search').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { query = e.target.value; render(); }, 150);
+  });
+
+  // ── Utils ─────────────────────────────────────────
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

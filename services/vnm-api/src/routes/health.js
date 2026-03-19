@@ -66,6 +66,7 @@ export default async function healthRoutes(fastify) {
       version: '1.0.0',
       uptime: Math.round(process.uptime() * 100) / 100,
       timestamp: new Date().toISOString(),
+      r2Mode: process.env.VNM_R2_MODE === 'true',
       database: dbStatus,
       builder: {
         status: builderStatus,

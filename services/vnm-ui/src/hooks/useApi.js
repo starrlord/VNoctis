@@ -90,6 +90,19 @@ const api = {
    * @param {any} [body]
    * @returns {Promise<any>}
    */
+  put(path, body) {
+    return fetch(`${API_BASE}${path}`, {
+      method: 'PUT',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body ?? {}),
+    }).then(handleResponse);
+  },
+
+  /**
+   * @param {string} path
+   * @param {any} [body]
+   * @returns {Promise<any>}
+   */
   patch(path, body) {
     return fetch(`${API_BASE}${path}`, {
       method: 'PATCH',

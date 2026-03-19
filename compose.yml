@@ -30,7 +30,7 @@ services:
     environment:
       PUID: ${PUID}
       PGID: ${PGID}
-      DATABASE_URL: file:/data/vnm.db
+      VNM_R2_MODE: ${VNM_R2_MODE:-false}
       GAMES_PATH: /games
       COVERS_PATH: /covers
       SCREENSHOTS_PATH: /screenshots

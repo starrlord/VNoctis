@@ -1,11 +1,14 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useGallery from '../hooks/useGallery';
+import useAuth from '../hooks/useAuth';
+import usePublish from '../hooks/usePublish';
 import GalleryNavbar from '../components/gallery/GalleryNavbar';
 import GalleryHero from '../components/gallery/GalleryHero';
 import GalleryRow from '../components/gallery/GalleryRow';
 import GalleryCard from '../components/gallery/GalleryCard';
 import GalleryDetailModal from '../components/gallery/GalleryDetailModal';
+import PublishProgressModal from '../components/PublishProgressModal';
 
 /**
  * Netflix-style game gallery page.
@@ -17,8 +20,9 @@ import GalleryDetailModal from '../components/gallery/GalleryDetailModal';
  *  2. Search — flat grid filtered by search query
  *  3. Category — full grid for a specific tag/category (via "View More" or tag click)
  */
-export default function Gallery() {
+export default function Gallery({ r2Mode = false }) {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const {
     games,
     loading,
@@ -32,7 +36,22 @@ export default function Gallery() {
     toggleFavorite,
   } = useGallery();
 
+  const { publishGame, activeJob, clearJob } = usePublish();
+
   const [selectedGameId, setSelectedGameId] = useState(null);
+
+  const handlePublish = useCallback(async (game) => {
+    try {
+      await publishGame(game.id);
+    } catch (err) {
+      // Error surfaces via the progress modal
+    }
+  }, [publishGame]);
+
+  // After publish completes, refetch so publish status badges update
+  const handlePublishDone = useCallback(() => {
+    refetch({ silent: true });
+  }, [refetch]);
 
   // Category filter view: { title, games } or null
   const [categoryView, setCategoryView] = useState(null);
@@ -165,6 +184,8 @@ export default function Gallery() {
                   onClick={handleCardClick}
                   onPlay={handlePlay}
                   onFavorite={toggleFavorite}
+                  onPublish={isAdmin ? handlePublish : undefined}
+                  r2Mode={r2Mode}
                   fluid
                 />
               ))}
@@ -204,6 +225,8 @@ export default function Gallery() {
                 onClick={handleCardClick}
                 onPlay={handlePlay}
                 onFavorite={toggleFavorite}
+                onPublish={isAdmin ? handlePublish : undefined}
+                r2Mode={r2Mode}
                 fluid
               />
             ))}
@@ -229,6 +252,8 @@ export default function Gallery() {
                 onCardClick={handleCardClick}
                 onPlay={handlePlay}
                 onFavorite={toggleFavorite}
+                onPublish={isAdmin ? handlePublish : undefined}
+                r2Mode={r2Mode}
                 onViewMore={handleViewMore}
               />
             ))}
@@ -250,6 +275,19 @@ export default function Gallery() {
       <footer className="py-6 text-center text-xs text-gray-500">
         VNoctis Manager v{__APP_VERSION__} &middot; Manage &amp; Play Your Visual Novels
       </footer>
+
+      {/* Publish progress modal */}
+      {activeJob && (
+        <PublishProgressModal
+          jobId={activeJob.jobId}
+          gameTitle={games.find((g) => g.id === activeJob.gameId)?.vndbTitle
+            || games.find((g) => g.id === activeJob.gameId)?.extractedTitle
+            || 'Unknown'}
+          coverUrl={activeJob.gameId ? `/api/v1/covers/${activeJob.gameId}` : undefined}
+          onClose={clearJob}
+          onDone={handlePublishDone}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './hooks/useAuth';
 import useAuth from './hooks/useAuth';
@@ -10,6 +10,7 @@ import BuildLog from './pages/BuildLog';
 import Gallery from './pages/Gallery';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
+import R2Settings from './pages/R2Settings';
 import ImportGameModal from './components/ImportGameModal';
 import useTheme from './hooks/useTheme';
 
@@ -82,7 +83,17 @@ function AppContent() {
   const { theme, toggleTheme, isDark } = useTheme();
   const { user, logout, isAuthenticated, isAdmin } = useAuth();
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showR2Modal, setShowR2Modal] = useState(false);
+  const [r2Mode, setR2Mode] = useState(false);
   const location = useLocation();
+
+  // Fetch r2Mode from health endpoint once on mount
+  useEffect(() => {
+    fetch('/api/v1/health')
+      .then((r) => r.json())
+      .then((d) => { if (d.r2Mode) setR2Mode(true); })
+      .catch(() => {});
+  }, []);
 
   const isLoginPage = location.pathname === '/login';
   const isPlayerPage = location.pathname.startsWith('/play/') || location.pathname.startsWith('/gallery/play/');
@@ -96,11 +107,13 @@ function AppContent() {
       {!isLoginPage && !isFullscreenPage && isAuthenticated && (
         <Navbar
           onImport={() => setShowImportModal(true)}
+          onR2Settings={() => setShowR2Modal(true)}
           isDark={isDark}
           onToggleTheme={toggleTheme}
           username={user?.username}
           onLogout={logout}
           isAdmin={isAdmin}
+          r2Mode={r2Mode}
         />
       )}
 
@@ -111,7 +124,7 @@ function AppContent() {
             path="/"
             element={
               <RequireAuth>
-                <Library />
+                <Library r2Mode={r2Mode} />
               </RequireAuth>
             }
           />
@@ -143,7 +156,7 @@ function AppContent() {
             path="/gallery"
             element={
               <RequireAuth>
-                <Gallery />
+                <Gallery r2Mode={r2Mode} />
               </RequireAuth>
             }
           />
@@ -166,6 +179,14 @@ function AppContent() {
           onImported={() => {
             window.dispatchEvent(new Event('vnm:library-refresh'));
           }}
+        />
+      )}
+
+      {/* R2 Settings modal (admin only) */}
+      {!isLoginPage && isAdmin && r2Mode && (
+        <R2Settings
+          open={showR2Modal}
+          onClose={() => setShowR2Modal(false)}
         />
       )}
     </div>

@@ -1,8 +1,8 @@
 # Security Audit — VNoctis Manager
 
-**Audit date:** 2026-03-17 (re-audited after multi-user feature implementation)
-**Previous audits:** 2026-03-12 (Node.js 24 upgrade + logging), initial audit
-**Scope:** Full codebase review — authentication, session management, input validation, Docker configuration, API security, error handling, multi-user role-based access control
+**Audit date:** 2026-03-19 (re-audited after R2 modal/gallery player changes)
+**Previous audits:** 2026-03-17 (multi-user feature), 2026-03-12 (Node.js 24 upgrade + logging), initial audit
+**Scope:** Full codebase review — authentication, session management, input validation, Docker configuration, API security, error handling, multi-user role-based access control, static gallery security
 
 ---
 
@@ -338,6 +338,29 @@ If `RESET_ADMIN_PASSWORD=true` is left in the `.env` file after a password reset
 
 ---
 
+### Finding #17 — Same-origin iframe in static gallery player (Low)
+
+**File:** `services/vnm-api/templates/gallery.html`
+
+The static gallery (hosted on Cloudflare R2) now loads games in a same-origin `<iframe>` with `sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"` instead of opening them in a new tab via `target="_blank"`.
+
+```html
+<iframe id="player-iframe" sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"></iframe>
+```
+
+**Risk:** With `allow-same-origin`, JavaScript inside the game iframe can access the parent page's DOM via `window.parent.document` because both the gallery and games live under the same R2 public domain (e.g., `https://games.example.com/` and `https://games.example.com/games/{id}/index.html`). A malicious game could manipulate the gallery page's content.
+
+**Mitigating factors:**
+- Games are admin-curated content — only admins can publish to R2
+- The static gallery contains **zero sensitive data** — no auth tokens, no API access, no user credentials; it's a purely public static page
+- Ren'Py web builds are compiled WebAssembly (Emscripten), not hand-written JavaScript
+- Previously with `target="_blank"`, the game ran in its own tab with full JavaScript capabilities (no sandbox at all) — the iframe sandbox is actually **more restrictive** than the previous behavior
+- Removing `allow-same-origin` would break WebAssembly games that need to access their own origin for asset loading
+
+**Recommendation:** Acceptable. The sandbox is more restrictive than the previous new-tab behavior, and the gallery has no sensitive data to protect. If maximum isolation is desired in the future, games could be served from a different subdomain (e.g., `play.example.com`) so the iframe would be cross-origin.
+
+---
+
 ### Finding #16 — bcrypt DoS via login endpoint (Low — Mitigated)
 
 **File:** `services/vnm-api/src/routes/auth.js` lines 50, 61
@@ -370,6 +393,7 @@ Every login attempt (including failures) triggers a `bcrypt.compare()` with cost
 | ~~14~~ | ~~No userId format validation~~ | ~~Low~~ | ✅ **Resolved** — UUID regex validation added |
 | 15 | `RESET_ADMIN_PASSWORD` no auto-disable | Low | Acceptable — well-documented |
 | 16 | bcrypt DoS via login | Low | Mitigated by rate limiting |
+| 17 | Same-origin iframe in static gallery player | Low | Acceptable — gallery has no sensitive data; sandbox more restrictive than previous new-tab behavior |
 
 ---
 

@@ -27,6 +27,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/templates ./templates
 
 # Create directories that may be used as mount points
 RUN mkdir -p /data /data/logs /covers /web-builds /games

@@ -14,7 +14,7 @@ import { generateGradient, formatRating, getRatingColor, truncate } from '../../
  *   fluid?: boolean,
  * }} props
  */
-export default function GalleryCard({ game, onClick, onPlay, onFavorite, size = 'normal', fluid = false }) {
+export default function GalleryCard({ game, onClick, onPlay, onFavorite, onPublish, r2Mode = false, size = 'normal', fluid = false }) {
   const [hovered, setHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -67,6 +67,21 @@ export default function GalleryCard({ game, onClick, onPlay, onFavorite, size = 
           </div>
         )}
 
+        {/* Publish status badge — top-left, below favorite (R2 mode + admin) */}
+        {r2Mode && onPublish && game.buildStatus === 'built' && (
+          <div className={`absolute top-9 left-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-semibold leading-tight ${
+            game.publishStatus === 'published'
+              ? 'bg-green-500/80 text-white'
+              : game.publishStatus === 'publishing'
+              ? 'bg-yellow-500/80 text-gray-900 animate-pulse'
+              : 'bg-gray-700/70 text-gray-300'
+          }`}>
+            {game.publishStatus === 'published' ? '✓ R2'
+              : game.publishStatus === 'publishing' ? '↑ Uploading'
+              : '○ Unpublished'}
+          </div>
+        )}
+
         {/* Favorite heart — top-left */}
         {onFavorite && (
           <button
@@ -113,19 +128,39 @@ export default function GalleryCard({ game, onClick, onPlay, onFavorite, size = 
               {truncate(game.synopsis, 120)}
             </p>
           )}
-          {/* Play button on hover */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onPlay?.(game);
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-black hover:bg-gray-200 transition-colors shadow-lg"
-            aria-label={`Play ${title}`}
-          >
-            <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </button>
+          {/* Action buttons row on hover */}
+          <div className="flex items-center gap-2">
+            {/* Play button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onPlay?.(game);
+              }}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-black hover:bg-gray-200 transition-colors shadow-lg"
+              aria-label={`Play ${title}`}
+            >
+              <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </button>
+
+            {/* Publish button — admin + R2 mode only */}
+            {r2Mode && onPublish && game.buildStatus === 'built' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPublish(game);
+                }}
+                disabled={game.publishStatus === 'publishing'}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600/90 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                title={game.publishStatus === 'published' ? 'Republish to R2' : 'Publish to R2'}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
