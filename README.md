@@ -115,6 +115,10 @@ docker compose up -d
 #    Default username: admin
 ```
 
+> By default, `compose.yml` pulls the GitHub Container Registry images published from `starrlord/VNoctis`: `ghcr.io/starrlord/vnoctis-vnm-api:latest`, `ghcr.io/starrlord/vnoctis-vnm-builder:latest`, and `ghcr.io/starrlord/vnoctis-vnm-ui:latest`. Override `VNM_API_IMAGE`, `VNM_BUILDER_IMAGE`, and `VNM_UI_IMAGE` in `.env` if you want to use a fork or another registry.
+
+> If the publishing workflow is enabled for the first time, the GHCR packages may need to be switched to **public** once in the package settings before anonymous `docker compose pull` works.
+
 ### Building from source
 
 ```bash
@@ -154,6 +158,14 @@ ${VNM_ROOT}/
 | Variable | Default | Description |
 |---|---|---|
 | `HOST_PORT` | `6773` | Port exposed on the host for the web UI |
+
+### Images
+
+| Variable | Default | Description |
+|---|---|---|
+| `VNM_API_IMAGE` | `ghcr.io/starrlord/vnoctis-vnm-api:latest` | Optional override for the API image used by `compose.yml` |
+| `VNM_BUILDER_IMAGE` | `ghcr.io/starrlord/vnoctis-vnm-builder:latest` | Optional override for the builder image used by `compose.yml` |
+| `VNM_UI_IMAGE` | `ghcr.io/starrlord/vnoctis-vnm-ui:latest` | Optional override for the UI image used by `compose.yml` |
 
 ### Authentication
 
