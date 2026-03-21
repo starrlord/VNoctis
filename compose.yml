@@ -58,7 +58,7 @@ services:
       start_period: 15s
 
   vnm-builder:
-    image: yourrepo.com/vnm/vnm-builder:latest
+    image: ${VNM_BUILDER_IMAGE:-ghcr.io/starrlord/vnoctis-vnm-builder:latest}
     # build: ./services/vnm-builder
     container_name: vnm-builder
     restart: unless-stopped
