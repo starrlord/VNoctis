@@ -3,10 +3,10 @@
 # IMPORTANT: Copy .env.example to .env and set at least VNM_ROOT before running.
 # All host paths and settings are defined in .env (single source of truth).
 #
-# To use pre-built images from yourrepo.com, replace
+# To use pre-built images from GitHub Container Registry, replace
 #   build: ./services/vnm-api
 # with:
-#   image: yourrepo.com/vnm/vnm-api:latest
+#   image: ghcr.io/starrlord/vnoctis-vnm-api:latest
 #
 # Likewise for vnm-builder and vnm-ui.
 
