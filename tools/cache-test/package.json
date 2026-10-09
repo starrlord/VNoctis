@@ -1,0 +1,6 @@
+{
+  "name": "vnoctis-cache-test",
+  "private": true,
+  "scripts": { "test": "node measure.cjs", "test:worker": "node --test worker.test.cjs" },
+  "devDependencies": { "playwright": "^1.63.0" }
+}

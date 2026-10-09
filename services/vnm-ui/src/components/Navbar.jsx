@@ -16,8 +16,8 @@ export default function Navbar({ onImport, onR2Settings, isDark = true, onToggle
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-3 sm:px-6 shadow-lg transition-colors duration-200">
       {/* Left: App title — clickable, navigates to admin library */}
-      <Link to="/" className="text-xl font-bold text-gray-900 dark:text-white tracking-wide select-none hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
-        🎮 VNoctis Manager
+      <Link to="/" aria-label="VNoctis Manager" className="text-xl font-bold text-gray-900 dark:text-white tracking-wide select-none hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
+        🎮 <span className="hidden min-[400px]:inline">VNoctis Manager</span>
       </Link>
 
       {/* Right: Theme toggle + Import + User controls */}
@@ -145,6 +145,9 @@ export default function Navbar({ onImport, onR2Settings, isDark = true, onToggle
           <>
             <div className="h-6 w-px bg-gray-300 dark:bg-gray-700" />
 
+            <Link to="/dashboard" aria-label="Your dashboard" title="Your dashboard" className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13h18M5 7h14l2 6v6H3v-6l2-6Zm4 6v3h6v-3" /></svg>
+            </Link>
             {/* Username badge */}
             {username && (
               <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">

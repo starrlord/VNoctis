@@ -149,6 +149,7 @@ export async function scanGamesDirectory(gamesPath, prisma, logger) {
     }
 
     // --- ZIP detection and import ---
+    let importingZip = false;
     try {
       // List directory entries and find .zip files
       const dirEntries = await readdir(dirPath, { withFileTypes: true });
@@ -180,6 +181,11 @@ export async function scanGamesDirectory(gamesPath, prisma, logger) {
           const outputDir = join(webBuildsPath, entry.name);
 
           log.info?.({ id, zip: zipFile }, 'Found pre-built ZIP, attempting import');
+
+          // Block uncached reads from an older browser build before replacing
+          // files. Publish the new builtAt identity only after extraction succeeds.
+          await prisma.game.update({ where: { id }, data: { buildStatus: 'building' } });
+          importingZip = true;
 
           // Clean existing output directory if present
           try {
@@ -249,11 +255,13 @@ export async function scanGamesDirectory(gamesPath, prisma, logger) {
           } else {
             // Not a valid web build — clean up
             await rm(outputDir, { recursive: true, force: true });
+            await prisma.game.update({ where: { id }, data: { buildStatus: 'failed' } });
             log.warn?.({ id, zip: zipFile }, 'ZIP does not contain index.html — not a valid web build');
           }
         }
       }
     } catch (zipErr) {
+      if (importingZip) await prisma.game.update({ where: { id }, data: { buildStatus: 'failed' } });
       log.warn?.({ id, err: zipErr?.message || zipErr }, 'Failed to import ZIP for game — continuing scan');
     }
   }

@@ -11,6 +11,7 @@ import Gallery from './pages/Gallery';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import R2Settings from './pages/R2Settings';
+import Dashboard from './pages/Dashboard';
 import ImportGameModal from './components/ImportGameModal';
 import useTheme from './hooks/useTheme';
 
@@ -120,6 +121,7 @@ function AppContent() {
       <main className={isLoginPage || isFullscreenPage ? '' : 'pt-16'}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route
             path="/"
             element={

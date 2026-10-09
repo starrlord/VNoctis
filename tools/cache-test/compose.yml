@@ -1,0 +1,42 @@
+name: vnoctis-cache-test
+
+services:
+  vnm-api:
+    build: ../../services/vnm-api
+    image: vnoctis-cache-test-api:local
+    environment:
+      PUID: "0"
+      PGID: "0"
+      DATABASE_URL: file:/data/vnm.db
+      VNM_ADMIN_USER: cache-test
+      VNM_ADMIN_PASSWORD: local-cache-test-only
+      GAMES_PATH: /data/games
+      WEB_BUILDS_PATH: /web-builds
+      COVERS_PATH: /covers
+      SCREENSHOTS_PATH: /screenshots
+      BUILDER_URL: http://127.0.0.1:9
+    volumes:
+      - ../../test-data/cache-test/data:/data
+      - ../../test-data/${CACHE_GAME_DIRECTORY:-Abnormal-0990.1-pc}:/web-builds/cache-test:ro
+      - .:/cache-test:ro
+    command: [sh, -c, "node /cache-test/seed.cjs && exec node src/index.js"]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://localhost:3001/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  vnm-ui:
+    build: ../../services/vnm-ui
+    image: vnoctis-cache-test-ui:local
+    # Root avoids host bind-mount permission differences in this local test only.
+    user: "0:0"
+    ports:
+      - "127.0.0.1:${CACHE_TEST_PORT:-3180}:80"
+    volumes:
+      - ../../test-data/${CACHE_GAME_DIRECTORY:-Abnormal-0990.1-pc}:/web-builds/cache-test:ro
+      - ../../test-data/cache-test/logs:/var/log/nginx
+      - ./logging.conf:/etc/nginx/conf.d/cache-test-logging.conf:ro
+    depends_on:
+      vnm-api:
+        condition: service_healthy

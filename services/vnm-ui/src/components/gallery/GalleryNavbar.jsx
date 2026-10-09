@@ -55,12 +55,15 @@ export default function GalleryNavbar({ searchQuery, onSearchChange }) {
       <Link to="/gallery" className="flex items-center gap-2 group">
         <span className="text-xl font-bold text-white tracking-wide select-none">
           🎮 <span className="bg-gradient-to-r from-violet-400 to-indigo-400 bg-clip-text text-transparent group-hover:from-violet-300 group-hover:to-indigo-300 transition-all">VNoctis</span>
-          <span className="text-gray-400 font-medium text-lg ml-1">Game Gallery</span>
+          <span className="hidden sm:inline text-gray-400 font-medium text-lg ml-1">Game Gallery</span>
         </span>
       </Link>
 
       {/* Right: Search + Admin link */}
       <div className="flex items-center gap-3">
+        <Link to="/dashboard" aria-label="Your dashboard" title="Your dashboard" className="p-2 text-gray-300 hover:text-white rounded-lg hover:bg-white/10">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13h18M5 7h14l2 6v6H3v-6l2-6Zm4 6v3h6v-3" /></svg>
+        </Link>
         {/* Search */}
         <div className="flex items-center">
           <div

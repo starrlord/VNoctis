@@ -4,6 +4,7 @@ import useBuildStatus from '../hooks/useBuildStatus';
 import PlayerChrome from '../components/PlayerChrome';
 import BuildProgress from '../components/BuildProgress';
 import SaveWarningToast from '../components/SaveWarningToast';
+import { prepareGameCache } from '../utils/gameCache';
 
 /**
  * Full in-browser game player page at `/play/:gameId`.
@@ -146,7 +147,26 @@ export default function Player() {
   // In landscape (isPortrait=false) the overlay is hidden via CSS, so render.
   // In portrait, wait until the user explicitly taps "Continue in portrait".
   // Desktop users are virtually always landscape, so this is transparent to them.
-  const iframeReady = showIframe && (overlayDismissed || !isPortrait);
+  const wantsIframe = showIframe && (overlayDismissed || !isPortrait);
+  const [cacheLaunch, setCacheLaunch] = useState(null);
+  const [cacheWarning, setCacheWarning] = useState('');
+  const launchKey = game ? `${game.id}:${game.builtAt}:${game.webBuildPath}` : '';
+  useEffect(() => {
+    if (!wantsIframe || !game) return;
+    let cancelled = false;
+    setCacheWarning('');
+    prepareGameCache(game).catch(() => ({ src: `${game.webBuildPath}/index.html`,
+      warning: 'Game storage could not start. Downloads may not be retained this time.' }))
+      .then(result => { if (!cancelled) { setCacheLaunch({ ...result, key: launchKey }); setCacheWarning(result.warning || ''); } });
+    return () => { cancelled = true; };
+  }, [wantsIframe, launchKey]);
+  useEffect(() => {
+    if (!navigator.serviceWorker) return;
+    const message = event => { if (event.data?.type === 'vnm-game-cache-warning' && event.data.gameId === gameId) setCacheWarning(event.data.message); };
+    navigator.serviceWorker.addEventListener('message', message);
+    return () => navigator.serviceWorker.removeEventListener('message', message);
+  }, [gameId]);
+  const iframeReady = wantsIframe && cacheLaunch?.key === launchKey;
 
   // ------------------------------------------------------------------
   // Fullscreen helpers (disabled on iOS where the API is unsupported)
@@ -350,13 +370,16 @@ export default function Player() {
           <>
             <iframe
               ref={iframeRef}
-              src={`${game.webBuildPath}/index.html`}
+              src={cacheLaunch.src}
               title={title}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"
               allow="autoplay; fullscreen"
               className="absolute inset-0 w-full h-full border-0"
             />
             <SaveWarningToast />
+            {cacheWarning && <div role="status" className="absolute bottom-4 left-4 right-4 sm:left-auto sm:max-w-md rounded-lg bg-amber-950/95 text-amber-100 p-3 text-sm flex items-start gap-3">
+              <span>{cacheWarning}</span><button aria-label="Dismiss storage notice" className="shrink-0 min-w-8 min-h-8" onClick={() => setCacheWarning('')}>×</button>
+            </div>}
           </>
         ) : showIframe ? (
           /* Game is built & ready but the portrait overlay is still blocking.
