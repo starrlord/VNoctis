@@ -11,6 +11,9 @@ from pathlib import Path
 import httpx
 
 from compressor import create_compressed_overlay, cleanup_overlay
+from compatibility import (
+    create_uncompressed_overlay, needs_legacy_image_lookup, prepare_build_overlay,
+)
 from logger import setup_logger
 
 logger = setup_logger("vnm-builder.builder")
@@ -259,7 +262,7 @@ class RenPyBuilder:
 
             # ── Compress images into overlay (if enabled) ────
             overlay_dir = Path(f"/tmp/build-{job_id}")
-            build_source = game_path  # default: build from original
+            build_source = game_path
 
             if compress_assets:
                 try:
@@ -275,7 +278,7 @@ class RenPyBuilder:
                 except Exception as comp_exc:
                     await _log(
                         f"[vnm-builder] ⚠️ Image compression failed: {comp_exc} "
-                        f"— building uncompressed from original game files"
+                        f"— building an uncompressed overlay"
                     )
                     logger.warning(
                         "Compression failed job=%s: %s — proceeding uncompressed",
@@ -284,6 +287,20 @@ class RenPyBuilder:
                     build_source = game_path
             else:
                 await _log("[vnm-builder] Asset compression skipped (user opted out)")
+
+            # Always build from an overlay, including compression failures.
+            # Compatibility scripts and SDK-generated files belong to the build.
+            if build_source == game_path:
+                await asyncio.to_thread(
+                    create_uncompressed_overlay, game_path, str(overlay_dir),
+                )
+                build_source = str(overlay_dir)
+            legacy_image_lookup = await asyncio.to_thread(needs_legacy_image_lookup, game_path)
+            await asyncio.to_thread(prepare_build_overlay, build_source, legacy_image_lookup)
+            if legacy_image_lookup:
+                await _log(
+                    "[vnm-builder] Compatibility: preserving native images/ asset lookup fallback"
+                )
 
             # ── Write progressive_download.txt for web build ──
             prog_dl = Path(build_source) / "progressive_download.txt"
@@ -319,7 +336,7 @@ class RenPyBuilder:
                 launcher,           # renpy.sh path
                 launcher_path,      # /renpy-sdk/launcher as the basedir
                 'web_build',        # the web_build command
-                build_source,       # overlay (compressed) or original game path
+                build_source,       # disposable overlay, with optional compression
                 '--destination',    # destination flag
                 str(output_dir),    # /web-builds/{dirName}
             ]
@@ -413,7 +430,7 @@ class RenPyBuilder:
             was_cancelled = job_id in self._cancelled_jobs
             self._cancelled_jobs.discard(job_id)
             self.active_builds.pop(job_id, None)
-            # Always clean up the compression overlay
+            # Always clean up the build overlay
             cleanup_overlay(str(Path(f"/tmp/build-{job_id}")))
             # If cancelled, remove the partial output directory so stale
             # files don't linger on disk until the next build.
