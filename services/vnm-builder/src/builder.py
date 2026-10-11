@@ -6,11 +6,14 @@ import re
 import shutil
 import signal
 import time
+import sys
 from pathlib import Path
 
 import httpx
 
 from compressor import create_compressed_overlay, cleanup_overlay
+from build_storage import create_source_overlay, publish_build, materialize_mutable_files
+from published_assets import write_assets
 from logger import setup_logger
 
 logger = setup_logger("vnm-builder.builder")
@@ -20,6 +23,18 @@ _HEADLESS_ENV = {
     "SDL_AUDIODRIVER": "dummy",
     "SDL_VIDEODRIVER": "dummy",
 }
+
+
+async def owned_file_work(function, *args):
+    """Finish an owned filesystem operation before cancellation removes its output."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        try:
+            await task
+        finally:
+            raise
 
 
 class RenPyBuilder:
@@ -39,6 +54,7 @@ class RenPyBuilder:
         self.sdk_version = self._detect_sdk_version()
         self.active_builds: dict[str, asyncio.subprocess.Process] = {}
         self._cancelled_jobs: set[str] = set()
+        self.publishing_jobs: set[str] = set()
 
         # Ensure output directories exist
         self.logs_dir = self.web_builds_path / "logs"
@@ -186,14 +202,40 @@ class RenPyBuilder:
 
                 if line:
                     await log_fn(line)
-                    with open(log_file, "a", encoding="utf-8") as fh:
-                        fh.write(line + "\n")
 
         # Flush remaining buffer
         if buffer.strip():
             await log_fn(buffer.strip())
-            with open(log_file, "a", encoding="utf-8") as fh:
-                fh.write(buffer.strip() + "\n")
+
+    async def _prepare_archives(self, job_id, source, overlay, log_fn, log_file):
+        """Extract into owned directories, then replace overlay links rather than source files."""
+        await owned_file_work(create_source_overlay, source, overlay)
+        archives = sorted(overlay.rglob('*.rpa'))
+        if not archives:
+            return
+        await self._notify_api_status(job_id, 'building', stage='unpacking-rpa')
+        for number, archive in enumerate(archives, 1):
+            destination = Path(f'/tmp/rpa-{job_id}')
+            destination.mkdir(parents=True, exist_ok=True)
+            try:
+                await log_fn(f'[preparing] Unpacking archive {number}/{len(archives)}: {archive.name}')
+                proc = await asyncio.create_subprocess_exec(sys.executable, '-m', 'unrpa', '-p', str(destination), str(archive),
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+                self.active_builds[job_id] = proc
+                await self._stream_output(proc, log_fn, log_file)
+                await proc.wait()
+                if proc.returncode != 0:
+                    raise RuntimeError(f'Archive extraction failed: {archive.name} (exit {proc.returncode})')
+                for root, _, files in os.walk(destination):
+                    target_directory = archive.parent / Path(root).relative_to(destination)
+                    target_directory.mkdir(parents=True, exist_ok=True)
+                    for name in files:
+                        target = target_directory / name
+                        if target.is_symlink() or target.is_file(): target.unlink()
+                        (Path(root) / name).rename(target)
+                archive.unlink()
+            finally:
+                cleanup_overlay(str(destination))
 
     # ── Main build coroutine ───────────────────────────────
 
@@ -204,6 +246,7 @@ class RenPyBuilder:
         game_path: str,
         log_callback,
         compress_assets: bool = True,
+        force_recompress: bool = False,
     ):
         """Execute the Ren'Py web build for a game.
 
@@ -224,7 +267,10 @@ class RenPyBuilder:
         """
         log_file = self.logs_dir / f"{job_id}.log"
         dir_name = Path(game_path).name
-        output_dir = self.web_builds_path / dir_name
+        target_dir = self.web_builds_path / dir_name
+        staging_dir = self.web_builds_path / ".vnm-staging" / job_id
+        output_dir = staging_dir / "output"
+        previous_dir = staging_dir / "previous"
         start_time = time.monotonic()
 
         async def _log(line: str):
@@ -252,20 +298,23 @@ class RenPyBuilder:
             env = self._build_env()
             env["RENPY_LAUNCHER_DIR"] = str(self.sdk_path)
 
-            # ── Ensure output dir exists and is clean ────────
-            if output_dir.exists():
-                await asyncio.to_thread(shutil.rmtree, output_dir)
+            # Keep the previous playable build until replacement output validates.
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # ── Compress images into overlay (if enabled) ────
             overlay_dir = Path(f"/tmp/build-{job_id}")
             build_source = game_path  # default: build from original
+            compress_stats = {}
 
             if compress_assets:
+                prepared_source = Path(f'/tmp/prepare-{job_id}')
+                await self._prepare_archives(job_id, game_path, prepared_source, _log, log_file)
                 try:
                     await _log("[vnm-builder] Compressing images for web build...")
+                    await self._notify_api_status(job_id, "building", stage="optimizing")
                     compress_stats = await create_compressed_overlay(
-                        game_path, str(overlay_dir), log_callback=_log,
+                        str(prepared_source), str(overlay_dir), log_callback=_log,
+                        published_root=target_dir, force_recompress=force_recompress,
                     )
                     build_source = str(overlay_dir)
                     await _log(
@@ -281,9 +330,15 @@ class RenPyBuilder:
                         "Compression failed job=%s: %s — proceeding uncompressed",
                         job_id, comp_exc,
                     )
-                    build_source = game_path
+                    compress_stats = {}
+                    await owned_file_work(create_source_overlay, prepared_source, str(overlay_dir))
+                    build_source = str(overlay_dir)
             else:
                 await _log("[vnm-builder] Asset compression skipped (user opted out)")
+                await owned_file_work(create_source_overlay, game_path, str(overlay_dir))
+                build_source = str(overlay_dir)
+
+            await owned_file_work(materialize_mutable_files, overlay_dir)
 
             # ── Write progressive_download.txt for web build ──
             prog_dl = Path(build_source) / "progressive_download.txt"
@@ -313,6 +368,7 @@ class RenPyBuilder:
 
             # ── web_build via launcher ───────────────────────
             await _log("[vnm-builder] Building web distribution via web_build...")
+            await self._notify_api_status(job_id, "building", stage="packaging")
             launcher_path = os.path.join(str(self.sdk_path), 'launcher')
 
             build_cmd = [
@@ -359,22 +415,27 @@ class RenPyBuilder:
             # Ren'Py web_build creates a distributable .zip alongside
             # the extracted web root.  Only the extracted folder is
             # served by nginx, so delete the ZIP to save disk space.
-            sibling_zip = self.web_builds_path / f"{dir_name}.zip"
+            sibling_zip = output_dir.with_suffix(".zip")
             if sibling_zip.is_file():
                 sibling_zip.unlink()
                 await _log(f"[vnm-builder] Removed redundant distributable ZIP: {sibling_zip}")
 
             # ── Success ─────────────────────────────────────
+            reusable = await owned_file_work(write_assets, output_dir, compress_stats)
+            await _log(f'[vnm-builder] {reusable} optimized images indexed in the published build; no separate image cache retained.')
+            self.publishing_jobs.add(job_id)
+            await self._notify_api_status(job_id, "building", stage="publishing")
+            publish_build(output_dir, target_dir, previous_dir)
             elapsed = time.monotonic() - start_time
             web_build_path = f"/web-builds/{dir_name}"
+            await _log(
+                f"[vnm-builder] ✅ Web build successful! Output at: {target_dir} "
+                f"({elapsed:.1f}s)"
+            )
             await self._notify_api_status(
                 job_id,
                 "done",
                 web_build_path=web_build_path,
-            )
-            await _log(
-                f"[vnm-builder] ✅ Web build successful! Output at: {output_dir} "
-                f"({elapsed:.1f}s)"
             )
             logger.info(
                 "Build completed job=%s game=%s elapsed=%.1fs",
@@ -412,12 +473,15 @@ class RenPyBuilder:
         finally:
             was_cancelled = job_id in self._cancelled_jobs
             self._cancelled_jobs.discard(job_id)
+            self.publishing_jobs.discard(job_id)
             self.active_builds.pop(job_id, None)
             # Always clean up the compression overlay
             cleanup_overlay(str(Path(f"/tmp/build-{job_id}")))
+            cleanup_overlay(str(Path(f"/tmp/prepare-{job_id}")))
+            cleanup_overlay(str(Path(f"/tmp/rpa-{job_id}")))
             # If cancelled, remove the partial output directory so stale
             # files don't linger on disk until the next build.
-            if was_cancelled and output_dir.exists():
+            if output_dir.exists():
                 try:
                     await asyncio.to_thread(shutil.rmtree, output_dir)
                     logger.info(
@@ -429,6 +493,10 @@ class RenPyBuilder:
                         "Failed to clean up partial output %s: %s",
                         output_dir, cleanup_exc,
                     )
+            if previous_dir.exists():
+                await asyncio.to_thread(shutil.rmtree, previous_dir)
+            if staging_dir.exists():
+                await asyncio.to_thread(shutil.rmtree, staging_dir)
 
     # ── Cancel a running build ─────────────────────────────
 
@@ -471,10 +539,13 @@ class RenPyBuilder:
         *,
         error: str | None = None,
         web_build_path: str | None = None,
+        stage: str | None = None,
     ):
         """POST a status update back to vnm-api's internal endpoint."""
         url = f"{self.api_url}/api/v1/internal/build/{job_id}/status"
         payload: dict = {"status": status}
+        if stage is not None:
+            payload["stage"] = stage
         if error is not None:
             payload["error"] = error
         if web_build_path is not None:

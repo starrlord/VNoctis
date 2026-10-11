@@ -15,6 +15,7 @@ Environment variables (all optional):
   COMPRESS_JPEG_QUALITY  0-100 (default: 80)
   COMPRESS_PNG_QUALITY  "min-max" (default: "60-80")
   COMPRESS_WEBP_QUALITY  0-100 (default: 80)
+  COMPRESS_WEBP_METHOD   0-6 encoder effort (default: 2)
   COMPRESS_WORKERS       int, 0 = auto (default: 0)
 """
 
@@ -27,6 +28,8 @@ from functools import partial
 from pathlib import Path
 
 from logger import setup_logger
+from published_assets import digest, load_assets, reuse_asset
+from cpu_budget import cpu_capacity, worker_count, compression_budget
 
 logger = setup_logger("vnm-builder.compressor")
 
@@ -70,10 +73,13 @@ def _compress_one(
     jpeg_quality: int,
     png_quality: str,
     webp_quality: int,
-) -> tuple[str, int, int, str | None]:
+    webp_method: int = 2,
+    published_root: str | None = None,
+    previous: dict | None = None,
+):
     """Compress a single image file.
 
-    Returns ``(relative_path, original_bytes, compressed_bytes, error_or_None)``.
+    Returns ``(source_path, original_bytes, compressed_bytes, error_or_None, metadata)``.
     Runs in a worker process — must not reference any asyncio objects.
     """
     src_p = Path(src)
@@ -82,13 +88,16 @@ def _compress_one(
 
     try:
         dst_p.parent.mkdir(parents=True, exist_ok=True)
+        source_hash = digest(src_p)
+        if ext != '.bmp' and published_root and reuse_asset(published_root, previous, source_hash, dst_p):
+            return (src, original_size, dst_p.stat().st_size, None, {'source': source_hash, 'output': previous['output'], 'reused': True})
 
         if ext in (".jpg", ".jpeg"):
             compressed_size = _compress_jpeg(src_p, dst_p, jpeg_quality)
         elif ext == ".png":
             compressed_size = _compress_png(src_p, dst_p, png_quality)
         elif ext == ".webp":
-            compressed_size = _compress_webp(src_p, dst_p, webp_quality)
+            compressed_size = _compress_webp(src_p, dst_p, webp_quality, webp_method)
         elif ext == ".bmp":
             compressed_size = _compress_bmp(src_p, dst_p)
         else:
@@ -96,7 +105,7 @@ def _compress_one(
             shutil.copy2(src_p, dst_p)
             compressed_size = dst_p.stat().st_size
 
-        return (src, original_size, compressed_size, None)
+        return (src, original_size, compressed_size, None, {'source': source_hash, 'output': digest(dst_p), 'reused': False})
 
     except Exception as exc:
         # On failure, create a symlink so the build can still proceed
@@ -106,7 +115,7 @@ def _compress_one(
             os.symlink(src_p, dst_p)
         except OSError:
             pass
-        return (src, original_size, original_size, str(exc))
+        return (src, original_size, original_size, str(exc), None)
 
 
 def _compress_jpeg(src: Path, dst: Path, quality: int) -> int:
@@ -153,12 +162,12 @@ def _compress_png(src: Path, dst: Path, quality: str) -> int:
     return dst.stat().st_size if dst.exists() and not dst.is_symlink() else src.stat().st_size
 
 
-def _compress_webp(src: Path, dst: Path, quality: int) -> int:
+def _compress_webp(src: Path, dst: Path, quality: int, method: int = 2) -> int:
     """Re-encode WebP at target quality via Pillow."""
     from PIL import Image
 
-    img = Image.open(src)
-    img.save(dst, "WEBP", quality=quality, method=4)
+    with Image.open(src) as img:
+        img.save(dst, "WEBP", quality=quality, method=method)
     compressed = dst.stat().st_size
     # If Pillow made it bigger, symlink the original instead
     if compressed >= src.stat().st_size:
@@ -188,6 +197,8 @@ async def create_compressed_overlay(
     game_path: str,
     overlay_path: str,
     log_callback=None,
+    published_root=None,
+    force_recompress=False,
 ) -> dict:
     """Create a symlink overlay of *game_path* with compressed images.
 
@@ -216,7 +227,19 @@ async def create_compressed_overlay(
     jpeg_quality = _env_int("COMPRESS_JPEG_QUALITY", DEFAULT_JPEG_QUALITY)
     png_quality = _env_str("COMPRESS_PNG_QUALITY", DEFAULT_PNG_QUALITY)
     webp_quality = _env_int("COMPRESS_WEBP_QUALITY", DEFAULT_WEBP_QUALITY)
-    workers = _env_int("COMPRESS_WORKERS", 0) or os.cpu_count() or 4
+    requested_workers = _env_int("COMPRESS_WORKERS", 0)
+    capacity = cpu_capacity()
+    workers = worker_count(requested_workers, capacity, capacity.workers)
+    webp_method = max(0, min(6, _env_int('COMPRESS_WEBP_METHOD', 2)))
+    from PIL import __version__ as pillow_version, features
+    import subprocess
+    def tool_version(tool):
+        result = subprocess.run([tool, '--version'], capture_output=True, text=True, timeout=5)
+        return (result.stdout or result.stderr).splitlines()[0]
+    settings = {'version': 1, 'jpeg': jpeg_quality, 'png': png_quality, 'webp': webp_quality,
+                'webpMethod': webp_method, 'pillow': pillow_version, 'webpCodec': features.version('webp'),
+                'pngquant': tool_version('pngquant'), 'jpegoptim': tool_version('jpegoptim')}
+    previous = load_assets(published_root, settings) if published_root and not force_recompress else {}
 
     async def _log(msg: str):
         if log_callback:
@@ -269,6 +292,9 @@ async def create_compressed_overlay(
             "elapsed_s": time.monotonic() - t0,
         }
 
+    workers = worker_count(requested_workers, capacity, len(image_jobs))
+    await _log(f'[compressor] CPU allowance: host={capacity.host}, affinity={capacity.affinity}, quota={capacity.quota if capacity.quota is not None else "unlimited"}; requested workers={requested_workers}, capped workers={workers}')
+
     # ── Parallel compression ─────────────────────────────
     loop = asyncio.get_running_loop()
     compress_fn = partial(
@@ -276,6 +302,8 @@ async def create_compressed_overlay(
         jpeg_quality=jpeg_quality,
         png_quality=png_quality,
         webp_quality=webp_quality,
+        webp_method=webp_method,
+        published_root=str(published_root) if published_root else None,
     )
 
     total_original = 0
@@ -283,36 +311,60 @@ async def create_compressed_overlay(
     error_count = 0
     done_count = 0
     total = len(image_jobs)
+    assets = {}
+    reused_count = 0
+    await _log(f'[compressor] Published asset reuse: {len(previous)} candidates; force recompress={force_recompress}; WebP method={webp_method}')
 
     # ProcessPoolExecutor lets us fully parallelise CPU-bound compression
-    with ProcessPoolExecutor(max_workers=workers) as pool:
-        futures = []
-        for src, dst, ext in image_jobs:
-            future = loop.run_in_executor(pool, compress_fn, src, dst, ext)
-            futures.append(future)
+    async with compression_budget().reserve(workers, capacity.workers) as workers:
+        await _log(f'[compressor] Acquired {workers} compression workers from the shared {capacity.workers}-worker CPU budget.')
+        with ProcessPoolExecutor(max_workers=workers, initializer=os.setsid if hasattr(os, 'setsid') else None) as pool:
+            futures = []
+            for src, dst, ext in image_jobs:
+                relative = str(Path(src).relative_to(game)).replace(os.sep, '/')
+                future = loop.run_in_executor(pool, partial(compress_fn, previous=previous.get(relative)), src, dst, ext)
+                futures.append(future)
 
-        for coro in asyncio.as_completed(futures):
-            src, orig_sz, comp_sz, err = await coro
-            total_original += orig_sz
-            total_compressed += comp_sz
-            done_count += 1
-            if err:
-                error_count += 1
-                logger.warning("Compression failed for %s: %s", src, err)
+            try:
+                for coro in asyncio.as_completed(futures):
+                    src, orig_sz, comp_sz, err, metadata = await coro
+                    if metadata and Path(src).suffix.lower() != '.bmp':
+                        assets[str(Path(src).relative_to(game)).replace(os.sep, '/')] = metadata
+                        reused_count += int(metadata['reused'])
+                    total_original += orig_sz
+                    total_compressed += comp_sz
+                    done_count += 1
+                    if err:
+                        error_count += 1
+                        logger.warning("Compression failed for %s: %s", src, err)
 
-            # Progress every 200 images or at the end
-            if done_count % 200 == 0 or done_count == total:
-                pct = done_count / total * 100
-                saved_mb = (total_original - total_compressed) / (1024 * 1024)
-                ratio = (
-                    total_compressed / total_original * 100
-                    if total_original > 0
-                    else 0
-                )
-                await _log(
-                    f"[compressor] {done_count}/{total} ({pct:.0f}%) — "
-                    f"saved {saved_mb:.0f} MB so far ({ratio:.0f}% of original)"
-                )
+                    # Progress every 200 images or at the end
+                    if done_count % 200 == 0 or done_count == total:
+                        pct = done_count / total * 100
+                        saved_mb = (total_original - total_compressed) / (1024 * 1024)
+                        ratio = (
+                            total_compressed / total_original * 100
+                            if total_original > 0
+                            else 0
+                        )
+                        await _log(
+                            f"[compressor] {done_count}/{total} ({pct:.0f}%) — "
+                            f"saved {saved_mb:.0f} MB so far ({ratio:.0f}% of original), {reused_count} reused"
+                        )
+
+            except asyncio.CancelledError:
+                # Python 3.11 has no public pool-termination API. Each owned worker
+                # has its own process group so extraction tools stop with it too.
+                for future in futures: future.cancel()
+                for process in list((pool._processes or {}).values()):
+                    try:
+                        if hasattr(os, 'killpg'):
+                            import signal
+                            os.killpg(process.pid, signal.SIGTERM)
+                        else: process.terminate()
+                    except ProcessLookupError: pass
+                pool.shutdown(wait=False, cancel_futures=True)
+                raise
 
     elapsed = time.monotonic() - t0
     savings_mb = (total_original - total_compressed) / (1024 * 1024)
@@ -325,7 +377,7 @@ async def create_compressed_overlay(
     await _log(
         f"[compressor] ✅ Done in {elapsed:.1f}s — "
         f"{done_count} images, {savings_mb:.0f} MB saved "
-        f"({ratio:.0f}% of original), {error_count} errors"
+        f"({ratio:.0f}% of original), {error_count} errors, {reused_count} reused"
     )
 
     return {
@@ -335,6 +387,9 @@ async def create_compressed_overlay(
         "compressed_bytes": total_compressed,
         "errors": error_count,
         "elapsed_s": elapsed,
+        "assets": assets,
+        "settings": settings,
+        "reused": reused_count,
     }
 
 

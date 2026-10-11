@@ -7,12 +7,14 @@ import Navbar from './components/Navbar';
 import Library from './pages/Library';
 import Player from './pages/Player';
 import BuildLog from './pages/BuildLog';
+import Jobs from './pages/Jobs';
 import Gallery from './pages/Gallery';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import R2Settings from './pages/R2Settings';
 import ImportGameModal from './components/ImportGameModal';
 import useTheme from './hooks/useTheme';
+import api from './hooks/useApi';
 
 /**
  * Wrapper that redirects to /login if not authenticated.
@@ -95,6 +97,31 @@ function AppContent() {
       .catch(() => {});
   }, []);
 
+  // Refresh the library when accepted work finishes, including with its overlay closed.
+  useEffect(() => {
+    // Jobs already polls its own view; avoid a second competing query there.
+    if (!isAdmin || location.pathname === '/admin/jobs') return;
+    let active = true, timer, previous = null;
+    const controller = new AbortController();
+    async function poll() {
+      if (document.hidden) {
+        if (active) timer = setTimeout(poll, 5000);
+        return;
+      }
+      try {
+        const { items } = await api.get('/jobs', { signal: controller.signal });
+        if (!active) return;
+        if (previous && items.some(job => ['done', 'failed', 'cancelled'].includes(job.status) && previous.get(job.id) !== job.status)) {
+          window.dispatchEvent(new Event('vnm:library-refresh'));
+        }
+        previous = new Map(items.map(job => [job.id, job.status]));
+      } catch { /* Job views reconnect independently; keep the current library visible. */ }
+      if (active) timer = setTimeout(poll, 5000);
+    }
+    poll();
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [isAdmin, location.pathname]);
+
   const isLoginPage = location.pathname === '/login';
   const isPlayerPage = location.pathname.startsWith('/play/') || location.pathname.startsWith('/gallery/play/');
   const isBuildLogPage = location.pathname.startsWith('/build-log/');
@@ -139,11 +166,12 @@ function AppContent() {
           <Route
             path="/build-log/:jobId"
             element={
-              <RequireAuth>
+              <RequireAdmin>
                 <BuildLog />
-              </RequireAuth>
+              </RequireAdmin>
             }
           />
+          <Route path="/admin/jobs" element={<RequireAdmin><Jobs /></RequireAdmin>} />
           <Route
             path="/admin/users"
             element={

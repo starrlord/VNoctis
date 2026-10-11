@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import useBuildLog from '../hooks/useBuildLog';
 import StarBackground from './StarBackground';
+import { stageLabels } from '../utils/jobLog';
+import CompressionOptions from './CompressionOptions';
 
 /**
  * Renders the appropriate build-state UI for a game that is not yet
@@ -19,6 +21,7 @@ import StarBackground from './StarBackground';
  */
 export default function BuildProgress({
   buildState,
+  gameId,
   gameTitle,
   jobId,
   onBuild,
@@ -32,10 +35,10 @@ export default function BuildProgress({
       <StarBackground />
       <div className="relative z-10">
         {buildState === 'not_built' && (
-          <NotBuiltCard title={gameTitle} onBuild={onBuild} onMarkPlayable={onMarkPlayable} />
+          <NotBuiltCard gameId={gameId} title={gameTitle} onBuild={onBuild} onMarkPlayable={onMarkPlayable} />
         )}
         {buildState === 'queued' && (
-          <QueuedCard onCancel={onCancel} />
+          <BuildingCard title={gameTitle} jobId={jobId} onCancel={onCancel} />
         )}
         {buildState === 'building' && (
           <BuildingCard title={gameTitle} jobId={jobId} onCancel={onCancel} />
@@ -44,7 +47,7 @@ export default function BuildProgress({
           <FailedCard jobId={jobId} onRetry={onRetry} />
         )}
         {buildState === 'stale' && (
-          <StaleCard title={gameTitle} onBuild={onBuild} onPlayAnyway={onPlayAnyway} />
+          <StaleCard gameId={gameId} title={gameTitle} onBuild={onBuild} onPlayAnyway={onPlayAnyway} />
         )}
       </div>
     </div>
@@ -55,8 +58,8 @@ export default function BuildProgress({
 /*  Not Built                                                         */
 /* ------------------------------------------------------------------ */
 
-function NotBuiltCard({ title, onBuild, onMarkPlayable }) {
-  const [compressAssets, setCompressAssets] = useState(true);
+function NotBuiltCard({ gameId, title, onBuild, onMarkPlayable }) {
+  const [buildOptions, setBuildOptions] = useState({ compressAssets: true, forceRecompress: false, ready: false });
   const [markError, setMarkError] = useState(null);
   const [marking, setMarking] = useState(false);
 
@@ -95,26 +98,12 @@ function NotBuiltCard({ title, onBuild, onMarkPlayable }) {
         This game hasn&rsquo;t been built for web play yet.
       </p>
 
-      <label className="flex items-start gap-3 mb-5 mx-auto max-w-xs cursor-pointer select-none text-left">
-        <input
-          type="checkbox"
-          checked={compressAssets}
-          onChange={(e) => setCompressAssets(e.target.checked)}
-          className="mt-0.5 w-4 h-4 rounded border-gray-600 text-blue-600 focus:ring-blue-500 bg-gray-700"
-        />
-        <div>
-          <span className="text-sm font-medium text-white">
-            Compress assets
-          </span>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Extracts .rpa archives and compresses images for a smaller, faster-loading web build.
-          </p>
-        </div>
-      </label>
+      <CompressionOptions gameId={gameId} onChange={setBuildOptions} dark />
 
       <div className="flex flex-col items-center gap-3">
         <button
-          onClick={() => onBuild({ compressAssets })}
+          onClick={() => onBuild(buildOptions)}
+          disabled={!buildOptions.ready}
           className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 text-white font-semibold rounded-lg transition-colors duration-200"
         >
           Build Now
@@ -166,12 +155,12 @@ function QueuedCard({ onCancel }) {
 /* ------------------------------------------------------------------ */
 
 function BuildingCard({ title, jobId, onCancel }) {
-  const { lines, connected, error } = useBuildLog(jobId);
+  const { lines, connected, error, stage } = useBuildLog(jobId);
   const logEndRef = useRef(null);
 
   // Auto-scroll the log window
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    logEndRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [lines]);
 
   return (
@@ -181,7 +170,7 @@ function BuildingCard({ title, jobId, onCancel }) {
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse" />
           <h2 className="text-lg font-bold text-white">
-            Building {title}…
+            {title}
           </h2>
         </div>
         {jobId && (
@@ -199,6 +188,8 @@ function BuildingCard({ title, jobId, onCancel }) {
           </a>
         )}
       </div>
+
+      <p className="text-sm text-gray-400 mb-3">{stageLabels[stage] || 'Waiting to start'}</p>
 
       {/* Animated progress bar */}
       <div className="w-full h-1.5 bg-gray-700 rounded-full mb-4 overflow-hidden">
@@ -329,8 +320,8 @@ function FailedCard({ jobId, onRetry }) {
 /*  Stale                                                             */
 /* ------------------------------------------------------------------ */
 
-function StaleCard({ title, onBuild, onPlayAnyway }) {
-  const [compressAssets, setCompressAssets] = useState(true);
+function StaleCard({ gameId, title, onBuild, onPlayAnyway }) {
+  const [buildOptions, setBuildOptions] = useState({ compressAssets: true, forceRecompress: false, ready: false });
 
   return (
     <div className="bg-gray-800/80 backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-lg max-w-md w-full text-center">
@@ -354,26 +345,12 @@ function StaleCard({ title, onBuild, onPlayAnyway }) {
         Source files have changed since the last build.
       </p>
 
-      <label className="flex items-start gap-3 mb-5 mx-auto max-w-xs cursor-pointer select-none text-left">
-        <input
-          type="checkbox"
-          checked={compressAssets}
-          onChange={(e) => setCompressAssets(e.target.checked)}
-          className="mt-0.5 w-4 h-4 rounded border-gray-600 text-blue-600 focus:ring-blue-500 bg-gray-700"
-        />
-        <div>
-          <span className="text-sm font-medium text-white">
-            Compress assets
-          </span>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Extracts .rpa archives and compresses images for a smaller, faster-loading web build.
-          </p>
-        </div>
-      </label>
+      <CompressionOptions gameId={gameId} onChange={setBuildOptions} dark />
 
       <div className="flex items-center justify-center gap-3">
         <button
-          onClick={() => onBuild({ compressAssets })}
+          onClick={() => onBuild(buildOptions)}
+          disabled={!buildOptions.ready}
           className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 text-white font-semibold rounded-lg transition-colors duration-200"
         >
           Rebuild

@@ -1,104 +1,43 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { appendLogChunk } from '../utils/jobLog';
 
-/**
- * Custom hook for SSE build-log streaming.
- *
- * Connects to `/api/v1/build/{jobId}/log` via EventSource and accumulates
- * log lines as they arrive. Automatically cleans up on unmount or when
- * jobId changes, and auto-reconnects once on error after a 2-second delay.
- *
- * @param {string|null} jobId  The active build-job ID (null = no connection)
- * @returns {{ lines: string[], connected: boolean, error: string|null }}
- */
+/** Resume from the durable file cursor; a reconnect never clears existing output. */
 export default function useBuildLog(jobId) {
-  const [lines, setLines] = useState([]);
-  const [connected, setConnected] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Track whether we've already retried so we only auto-reconnect once
-  const retriedRef = useRef(false);
-  const esRef = useRef(null);
-  // Track whether the stream ended intentionally (done event received)
-  const doneRef = useRef(false);
-
+  const [state, setState] = useState({ lines: [], connected: false, error: null });
   useEffect(() => {
-    if (!jobId) {
-      setConnected(false);
-      return;
-    }
-
-    // Reset state for a new connection
-    setLines([]);
-    setError(null);
-    setConnected(false);
-    retriedRef.current = false;
-    doneRef.current = false;
-
-    function connect() {
-      const url = `/api/v1/build/${jobId}/log`;
-      const es = new EventSource(url);
-      esRef.current = es;
-
-      es.onopen = () => {
-        setConnected(true);
-        setError(null);
-      };
-
-      es.onmessage = (event) => {
-        const data = event.data;
-        // SSE "done" sentinel — server sends this when the build finishes
-        if (data === '[DONE]') {
-          doneRef.current = true;
-          es.close();
-          setConnected(false);
-          return;
-        }
-        setLines((prev) => [...prev, data]);
-      };
-
-      // Handle named 'done' event from server (event: done)
-      es.addEventListener('done', (event) => {
-        doneRef.current = true;
-        const finalStatus = event.data?.trim() || 'unknown';
-        setConnected(false);
-        setError(
-          finalStatus === 'success'
-            ? null
-            : finalStatus === 'failed'
-              ? 'Build failed.'
-              : null
-        );
-        es.close();
-      });
-
-      es.onerror = () => {
-        es.close();
-        setConnected(false);
-
-        // Don't reconnect if the stream ended intentionally
-        if (doneRef.current) return;
-
-        if (!retriedRef.current) {
-          // Auto-reconnect once after 2 seconds
-          retriedRef.current = true;
-          setTimeout(() => {
-            connect();
-          }, 2000);
-        } else {
-          setError('Lost connection to build log stream.');
-        }
-      };
-    }
-
-    connect();
-
-    return () => {
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
+    let active = true, timer, offset = 0, pending = '';
+    const controller = new AbortController();
+    setState({ lines: [], connected: false, error: null });
+    if (!jobId) return () => controller.abort();
+    async function poll() {
+      let delay = 1000;
+      try {
+        const response = await fetch(`/api/v1/jobs/${encodeURIComponent(jobId)}/log?offset=${offset}`, {
+          cache: 'no-store', headers: { Authorization: `Bearer ${localStorage.getItem('vnm-token') || ''}` }, signal: controller.signal,
+        });
+        if (!response.ok) throw Object.assign(new Error(`Log unavailable (${response.status})`), { permanent: [401, 403, 404].includes(response.status) });
+        const data = await response.json();
+        if (!active) return;
+        if (data.reset) { offset = 0; pending = ''; }
+        const next = appendLogChunk(data.text, pending, data.done && data.offset >= data.size);
+        pending = next.pending; offset = data.offset;
+        setState(previous => {
+          const lines = [...(data.reset ? [] : previous.lines), ...next.lines];
+          const omitted = (data.reset ? 0 : previous.omitted || 0) + Math.max(0, lines.length - 5000);
+          return { lines: lines.slice(-5000), connected: !data.done, error: null, stage: data.stage, status: data.status, omitted };
+        });
+        if (data.done && data.offset >= data.size) return;
+        if (data.offset < data.size) delay = 100;
+      } catch (error) {
+        if (!active) return;
+        setState(previous => ({ ...previous, connected: false, error: error.permanent ? error.message : 'Connection interrupted. Retained output will resume automatically.' }));
+        if (error.permanent) return;
+        delay = 2000;
       }
-    };
+      if (active) timer = setTimeout(poll, delay);
+    }
+    poll();
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
   }, [jobId]);
-
-  return { lines, connected, error };
+  return state;
 }

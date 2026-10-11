@@ -66,8 +66,9 @@ const api = {
    * @param {string} path
    * @returns {Promise<any>}
    */
-  get(path) {
+  get(path, options = {}) {
     return fetch(`${API_BASE}${path}`, {
+      ...options,
       headers: authHeaders(),
     }).then(handleResponse);
   },

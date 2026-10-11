@@ -87,6 +87,8 @@ export default function Navbar({ onImport, onR2Settings, isDark = true, onToggle
           <span className="hidden sm:inline">Game Gallery</span>
         </Link>
 
+        {isAdmin && <Link to="/admin/jobs" title="Jobs" className="px-2 sm:px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg">Jobs</Link>}
+
         {/* User Management link (admin only) */}
         {isAdmin && (
           <Link

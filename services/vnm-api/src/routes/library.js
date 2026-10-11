@@ -1,4 +1,4 @@
-import { rm, readdir, access } from 'node:fs/promises';
+import { rm, readdir, access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -61,6 +61,21 @@ const VALID_METADATA_SOURCES = ['auto', 'manual', 'unmatched'];
  */
 export default async function libraryRoutes(fastify) {
   const gamesPath = process.env.GAMES_PATH || '/games';
+
+  fastify.get('/library/:gameId/compression', async (request, reply) => {
+    const game = await fastify.prisma.game.findUnique({ where: { id: request.params.gameId } });
+    if (!game) return reply.code(404).send({ message: 'Game not found.' });
+    reply.header('Cache-Control', 'no-store');
+    try {
+      const root = join(process.env.WEB_BUILDS_PATH || '/web-builds', game.directoryName);
+      const info = JSON.parse(await readFile(join(root, '.vnm-compression.json'), 'utf8'));
+      if (info.version !== 1 || typeof info.compressed !== 'boolean' || !Number.isSafeInteger(info.reusableImages) || info.reusableImages < 0) throw new Error('Invalid compression metadata.');
+      await access(join(root, '.vnm-assets.json'));
+      return { compressed: info.compressed, reusableImages: info.reusableImages };
+    } catch {
+      return { compressed: null, reusableImages: 0 };
+    }
+  });
 
   /**
    * GET /library
@@ -419,7 +434,7 @@ export default async function libraryRoutes(fastify) {
   /**
    * DELETE /library/:gameId
    * Fully removes a game: source directory, web-build assets, covers,
-   * build logs, BuildJob records, and the Game database record.
+   * legacy build logs/records and the Game database record. Jobs-page history is retained.
    */
   fastify.delete('/library/:gameId', async (request, reply) => {
     const { gameId } = request.params;
@@ -507,7 +522,10 @@ export default async function libraryRoutes(fastify) {
       where: { gameId },
       select: { id: true },
     });
+    const retainedJobs = await fastify.prisma.workJob.findMany({ where: { gameId }, select: { id: true } });
+    const retainedIds = retainedJobs.map(job => job.id);
     for (const job of buildJobs) {
+      if (retainedIds.includes(job.id)) continue;
       try {
         await rm(join(webBuildsPath, 'logs', `${job.id}.log`), { force: true });
       } catch {
@@ -516,7 +534,7 @@ export default async function libraryRoutes(fastify) {
     }
 
     // 7. Delete BuildJob DB records
-    await fastify.prisma.buildJob.deleteMany({ where: { gameId } });
+    await fastify.prisma.buildJob.deleteMany({ where: { gameId, id: { notIn: retainedIds } } });
 
     // 8. Delete the Game DB record
     await fastify.prisma.game.delete({ where: { id: gameId } });

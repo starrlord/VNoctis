@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from './useApi';
+
+// Keep the last loaded view while navigating; never reuse another session's data.
+let libraryCache = null;
+const cachedLibrary = () => libraryCache?.token === localStorage.getItem('vnm-token') ? libraryCache.games : null;
 
 /**
  * Custom hook for library data management.
@@ -17,30 +21,45 @@ import api from './useApi';
  * }}
  */
 export default function useLibrary() {
-  const [games, setGames] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [games, setGames] = useState(() => cachedLibrary() || []);
+  const [loading, setLoading] = useState(() => cachedLibrary() === null);
+  const loaded = useRef(cachedLibrary() !== null);
+  const pending = useRef(null);
+  const sessionToken = useRef(localStorage.getItem('vnm-token'));
   const [error, setError] = useState(null);
   const [scanning, setScanning] = useState(false);
 
   const fetchGames = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) {
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+    const token = localStorage.getItem('vnm-token');
+    const showLoading = !silent && !loaded.current;
+    if (showLoading) {
       setLoading(true);
       setError(null);
     }
     try {
-      const data = await api.get('/library?includeHidden=true');
+      const data = await api.get('/library?includeHidden=true', { signal: controller.signal });
+      if (controller.signal.aborted || token !== localStorage.getItem('vnm-token')) return;
+      loaded.current = true;
       setGames(Array.isArray(data) ? data : []);
       if (!silent) setError(null);
     } catch (err) {
-      if (!silent) setError(err.message || 'Failed to fetch library');
+      if (!controller.signal.aborted && !silent && !loaded.current) setError(err.message || 'Failed to fetch library');
     } finally {
-      if (!silent) setLoading(false);
+      if (!controller.signal.aborted && showLoading) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchGames();
+    return () => pending.current?.abort();
   }, [fetchGames]);
+
+  useEffect(() => {
+    if (loaded.current && sessionToken.current === localStorage.getItem('vnm-token')) libraryCache = { token: sessionToken.current, games };
+  }, [games]);
 
   const triggerScan = useCallback(async () => {
     if (scanning) return;

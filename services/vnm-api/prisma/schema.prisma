@@ -83,6 +83,27 @@ model ScanJob {
   completedAt     DateTime?
 }
 
+model WorkJob {
+  id          String   @id @default(uuid())
+  kind        String
+  ownerId     String?
+  gameId      String?
+  title       String
+  input       String
+  status      String   @default("queued")
+  stage       String   @default("queued")
+  bytesDone   BigInt   @default(0)
+  bytesTotal  BigInt   @default(0)
+  error       String?
+  result      String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
 // ── R2 Publish models (only present in vnm-r2.db) ────────
 // Applied via raw SQL in R2 mode; never via a Prisma migration so that
 // vnm.db (the non-R2 database) remains clean.

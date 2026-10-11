@@ -3,3 +3,4 @@ uvicorn[standard]==0.34.0
 httpx==0.28.1
 pydantic==2.11.1
 Pillow==11.1.0
+unrpa==2.3.0

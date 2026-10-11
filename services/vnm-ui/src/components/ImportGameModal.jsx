@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import api from '../hooks/useApi';
+import { stageLabels } from '../utils/jobLog';
 
 /**
  * Format bytes into a human-readable string (e.g., "1.23 GB").
@@ -35,11 +38,15 @@ export default function ImportGameModal({ open, onClose, onImported }) {
   const [totalBytes, setTotalBytes] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [resultFolder, setResultFolder] = useState('');
+  const [jobId, setJobId] = useState(null);
+  const [jobStage, setJobStage] = useState('queued');
   const xhrRef = useRef(null);
   const abortRef = useRef(null);
   const modalRef = useRef(null);
   const fileInputRef = useRef(null);
   const previousFocusRef = useRef(null);
+  const importedRef = useRef(onImported);
+  importedRef.current = onImported;
 
   // Prevent body scroll while modal is open
   useEffect(() => {
@@ -55,7 +62,7 @@ export default function ImportGameModal({ open, onClose, onImported }) {
     modalRef.current?.focus();
 
     const handleKey = (e) => {
-      if (e.key === 'Escape' && !isProcessing) {
+      if (e.key === 'Escape' && (!isProcessing || jobId)) {
         onClose();
         return;
       }
@@ -81,7 +88,7 @@ export default function ImportGameModal({ open, onClose, onImported }) {
       window.removeEventListener('keydown', handleKey);
       previousFocusRef.current?.focus();
     };
-  }, [open, onClose, phase]);
+  }, [open, onClose, phase, jobId]);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -95,6 +102,8 @@ export default function ImportGameModal({ open, onClose, onImported }) {
       setErrorMsg('');
       setResultFolder('');
       setTab('file');
+      setJobId(null);
+      setJobStage('queued');
     }
   }, [open]);
 
@@ -102,6 +111,35 @@ export default function ImportGameModal({ open, onClose, onImported }) {
   const isSuccess = phase === 'success';
   const isError = phase === 'error';
   const isIdle = phase === 'idle';
+
+  useEffect(() => {
+    if (!open || !jobId) return;
+    let active = true, timer;
+    const controller = new AbortController();
+    async function poll() {
+      try {
+        const job = await api.get(`/jobs/${jobId}`, { signal: controller.signal });
+        if (!active) return;
+        setJobStage(job.stage);
+        if (job.status === 'done') {
+          setPhase('success'); setResultFolder(job.result?.folderName || ''); importedRef.current(); return;
+        }
+        if (['failed', 'cancelled'].includes(job.status)) {
+          setPhase('error'); setErrorMsg(job.error || 'Import cancelled.'); return;
+        }
+        setPhase(job.stage === 'downloading' ? 'downloading' : 'extracting');
+        setDownloadedBytes(job.bytesDone); setTotalBytes(job.bytesTotal);
+        setProgress(job.bytesTotal ? Math.round(job.bytesDone / job.bytesTotal * 100) : -1);
+        setErrorMsg('');
+      } catch (error) {
+        if (!active) return;
+        setErrorMsg('Connection interrupted. Processing continues on the server; reconnecting…');
+      }
+      if (active) timer = setTimeout(poll, 1500);
+    }
+    poll();
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [open, jobId]);
 
   // ── File selection handlers ────────────────────────
   const handleFileSelect = useCallback((selectedFile) => {
@@ -174,12 +212,10 @@ export default function ImportGameModal({ open, onClose, onImported }) {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const response = JSON.parse(xhr.responseText);
-          setPhase('success');
-          setResultFolder(response.folderName || '');
-          onImported();
+          if (!response.jobId) throw new Error('Missing import job');
+          setJobId(response.jobId); setPhase('extracting');
         } catch {
-          setPhase('success');
-          onImported();
+          setPhase('error'); setErrorMsg('Could not read the import result. Check Jobs before uploading again.');
         }
       } else {
         let message = `Upload failed (HTTP ${xhr.status})`;
@@ -258,69 +294,10 @@ export default function ImportGameModal({ open, onClose, onImported }) {
         signal: abortController.signal,
       });
 
-      if (!response.ok && !response.body) {
-        const text = await response.text();
-        let msg = `Server error (HTTP ${response.status})`;
-        try { msg = JSON.parse(text).message || msg; } catch {}
-        setPhase('error');
-        setErrorMsg(msg);
-        return;
-      }
-
-      // Read NDJSON stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // keep incomplete line in buffer
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line);
-
-            if (event.phase === 'downloading') {
-              setPhase('downloading');
-              if (event.totalBytes) setTotalBytes(event.totalBytes);
-              if (event.downloadedBytes) setDownloadedBytes(event.downloadedBytes);
-              if (event.progress >= 0) setProgress(event.progress);
-            } else if (event.phase === 'extracting') {
-              setPhase('extracting');
-              setProgress(100);
-            } else if (event.phase === 'complete') {
-              setPhase('success');
-              setResultFolder(event.folderName || '');
-              onImported();
-            } else if (event.phase === 'error') {
-              setPhase('error');
-              setErrorMsg(event.message || 'An error occurred during URL import.');
-            }
-          } catch {
-            // Skip unparseable lines
-          }
-        }
-      }
-
-      // Process any remaining buffer
-      if (buffer.trim()) {
-        try {
-          const event = JSON.parse(buffer);
-          if (event.phase === 'complete') {
-            setPhase('success');
-            setResultFolder(event.folderName || '');
-            onImported();
-          } else if (event.phase === 'error') {
-            setPhase('error');
-            setErrorMsg(event.message || 'An error occurred.');
-          }
-        } catch {}
-      }
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Import request failed.');
+      if (!result.jobId) throw new Error('Missing import job. Check Jobs before trying again.');
+      setJobId(result.jobId); setJobStage('queued'); setPhase('extracting');
     } catch (err) {
       if (err.name === 'AbortError') {
         setPhase('idle');
@@ -335,18 +312,15 @@ export default function ImportGameModal({ open, onClose, onImported }) {
   }, [url, isProcessing, onImported]);
 
   // ── Cancel handler ─────────────────────────────────
-  const handleCancel = useCallback(() => {
-    if (xhrRef.current) {
-      xhrRef.current.abort();
-      xhrRef.current = null;
+  const handleCancel = useCallback(async () => {
+    if (jobId) {
+      try { await api.post('/jobs/' + jobId + '/cancel'); setJobId(null); setPhase('idle'); }
+      catch (error) { setErrorMsg(error.message); }
+      return;
     }
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    setPhase('idle');
-    setProgress(0);
-  }, []);
+    xhrRef.current?.abort(); abortRef.current?.abort();
+    setPhase('idle'); setProgress(0);
+  }, [jobId]);
 
   // ── Retry handler ──────────────────────────────────
   const handleRetry = useCallback(() => {
@@ -364,7 +338,7 @@ export default function ImportGameModal({ open, onClose, onImported }) {
   return (
     <div
       className="fixed inset-0 z-[55] flex items-center justify-center bg-black/60 dark:bg-black/70 backdrop-blur-sm modal-safe-pad motion-safe:animate-fade-in"
-      onClick={!isProcessing ? onClose : undefined}
+      onClick={!isProcessing || jobId ? onClose : undefined}
       role="dialog"
       aria-modal="true"
       aria-label="Import Game"
@@ -389,7 +363,7 @@ export default function ImportGameModal({ open, onClose, onImported }) {
               <p className="text-xs text-gray-500 dark:text-gray-400">Upload an archive or import from URL</p>
             </div>
           </div>
-          {!isProcessing && (
+          {(!isProcessing || jobId) && (
             <button
               className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
               onClick={onClose}
@@ -593,10 +567,10 @@ export default function ImportGameModal({ open, onClose, onImported }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    Extracting & Scanning
+                    {stageLabels[jobStage] || 'Processing import'}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    This may take a moment for large games…
+                    {jobId ? 'You can close this window and follow progress in Jobs.' : 'Waiting for upload confirmation…'}
                   </p>
                 </div>
               </div>
@@ -638,13 +612,15 @@ export default function ImportGameModal({ open, onClose, onImported }) {
           )}
 
           {/* ── Inline error (validation) ── */}
-          {isIdle && errorMsg && (
+          {(isIdle || isProcessing) && errorMsg && (
             <p className="mt-3 text-sm text-red-500 dark:text-red-400 text-center">{errorMsg}</p>
           )}
         </div>
 
         {/* Footer / Action Buttons */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800">
+          {jobId && <Link to={`/build-log/${jobId}`} onClick={onClose} className="text-sm text-emerald-600 dark:text-emerald-400">View log</Link>}
+          {jobId && isProcessing && <button onClick={onClose} className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">Continue in background</button>}
           {isIdle && (
             <>
               <button

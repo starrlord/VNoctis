@@ -52,16 +52,6 @@ async def graceful_shutdown():
 
     if build_queue is not None:
         # Cancel all active builds gracefully
-        active_job_ids = list(build_queue._jobs.keys())
-        for job_id in active_job_ids:
-            state = build_queue._jobs.get(job_id)
-            if state and state.status == "building":
-                logger.info("Cancelling active build %s during shutdown", job_id)
-                try:
-                    await build_queue.cancel(job_id)
-                except Exception as exc:
-                    logger.warning("Error cancelling build %s: %s", job_id, exc)
-
         # Stop the build queue workers
         try:
             await build_queue.stop()
@@ -118,6 +108,7 @@ class BuildRequest(BaseModel):
     gameId: str
     gamePath: str
     compressAssets: bool = True
+    forceRecompress: bool = False
 
 
 class BuildAccepted(BaseModel):
@@ -176,6 +167,7 @@ async def start_build(body: BuildRequest):
         game_id=body.gameId,
         game_path=body.gamePath,
         compress_assets=body.compressAssets,
+        force_recompress=body.forceRecompress,
     )
 
     return BuildAccepted(jobId=body.jobId)
@@ -201,6 +193,15 @@ async def cancel_build(job_id: str):
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found or already finished")
 
     return {"status": "cancelled", "jobId": job_id}
+
+
+@app.get("/build/{job_id}")
+async def build_status(job_id: str):
+    assert build_queue is not None
+    record = build_queue.get_record(job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return record
 
 
 @app.get("/build/{job_id}/log")

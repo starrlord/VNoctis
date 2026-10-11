@@ -1,4 +1,3 @@
-import { extractRpaArchives } from '../services/rpaExtractor.js';
 
 /**
  * Build management route plugin.
@@ -26,144 +25,24 @@ export default async function buildRoutes(fastify) {
    */
   fastify.post('/build/:gameId', async (request, reply) => {
     const { gameId } = request.params;
-    const { compressAssets = true } = request.body || {};
-
-    if (!gameId || gameId.length !== 32) {
-      return reply.code(400).send({
-        code: 'INVALID_GAME_ID',
-        message: 'gameId must be a 32-character hex string.',
-      });
-    }
-
-    // Verify game exists
-    const game = await fastify.prisma.game.findUnique({
-      where: { id: gameId },
+    if (!/^[a-f0-9]{32}$/.test(gameId)) return reply.code(400).send({ message: 'Invalid game ID.' });
+    const game = await fastify.prisma.game.findUnique({ where: { id: gameId } });
+    if (!game) return reply.code(404).send({ message: 'Game not found.' });
+    const compressAssets = request.body?.compressAssets !== false;
+    const forceRecompress = request.body?.forceRecompress === true;
+    if (forceRecompress && !compressAssets) return reply.code(400).send({ message: "Force recompress requires asset compression." });
+    const buildJob = await fastify.prisma.$transaction(async tx => {
+      const job = await tx.buildJob.create({ data: { gameId } });
+      const claimed = await tx.game.updateMany({ where: { id: gameId, buildStatus: { notIn: ['queued', 'building'] } },
+        data: { buildStatus: 'queued', buildJobId: job.id } });
+      if (!claimed.count) throw Object.assign(new Error('Build already in progress.'), { statusCode: 409 });
+      await tx.workJob.create({ data: { id: job.id, kind: 'build', ownerId: request.user?.userId, gameId,
+        title: game.vndbTitle || game.extractedTitle, input: JSON.stringify({ compressAssets, forceRecompress }) } });
+      return job;
     });
-
-    if (!game) {
-      return reply.code(404).send({
-        code: 'GAME_NOT_FOUND',
-        message: `Game with id "${gameId}" not found.`,
-      });
-    }
-
-    // Don't allow queueing if already queued or building
-    if (game.buildStatus === 'queued' || game.buildStatus === 'building') {
-      return reply.code(409).send({
-        code: 'BUILD_ALREADY_IN_PROGRESS',
-        message: `Game already has a ${game.buildStatus} build. Cancel it first.`,
-      });
-    }
-
-    // Create the build job
-    const buildJob = await fastify.prisma.buildJob.create({
-      data: {
-        gameId,
-        status: 'queued',
-      },
-    });
-
-    // Update the game's build status and link to this job
-    await fastify.prisma.game.update({
-      where: { id: gameId },
-      data: {
-        buildStatus: 'queued',
-        buildJobId: buildJob.id,
-      },
-    });
-
-    // Extract any .rpa archives before building — same as the import flow.
-    // Games that were added manually (not through import) or that had
-    // .rpa files restored after a previous extraction need this step.
-    // Skipped when the user opts out of asset compression from the UI.
-    if (compressAssets) {
-      try {
-        await extractRpaArchives(game.directoryPath, request.log);
-      } catch (rpaErr) {
-        request.log.warn(
-          { err: rpaErr.message, gameId },
-          'Pre-build .rpa extraction failed — continuing with build anyway'
-        );
-      }
-    } else {
-      request.log.info({ gameId }, 'Skipping .rpa extraction (compressAssets=false)');
-    }
-
-    // Delegate to vnm-builder
-    try {
-      const res = await fetch(`${BUILDER_URL}/build`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: buildJob.id,
-          gameId,
-          gamePath: game.directoryPath,
-          compressAssets: !!compressAssets,
-        }),
-      });
-
-      if (!res.ok) {
-        const body = await res.text();
-        request.log.error(
-          { status: res.status, body },
-          'vnm-builder rejected build request'
-        );
-
-        // Rollback: mark the job as failed
-        await fastify.prisma.buildJob.update({
-          where: { id: buildJob.id },
-          data: {
-            status: 'failed',
-            error: `Builder rejected: ${res.status} — ${body}`,
-            completedAt: new Date(),
-          },
-        });
-        await fastify.prisma.game.update({
-          where: { id: gameId },
-          data: {
-            buildStatus: 'failed',
-            buildJobId: buildJob.id,
-          },
-        });
-
-        return reply.code(502).send({
-          code: 'BUILDER_REJECTED',
-          message: `Build service rejected the request: ${res.status}`,
-          jobId: buildJob.id,
-        });
-      }
-    } catch (err) {
-      request.log.error(
-        { err: err.message },
-        'Failed to contact vnm-builder'
-      );
-
-      // Rollback: mark the job as failed
-      await fastify.prisma.buildJob.update({
-        where: { id: buildJob.id },
-        data: {
-          status: 'failed',
-          error: `Builder unreachable: ${err.message}`,
-          completedAt: new Date(),
-        },
-      });
-      await fastify.prisma.game.update({
-        where: { id: gameId },
-        data: {
-          buildStatus: 'failed',
-          buildJobId: buildJob.id,
-        },
-      });
-
-      return reply.code(502).send({
-        code: 'BUILDER_UNAVAILABLE',
-        message: 'Build service is unreachable. Is vnm-builder running?',
-        jobId: buildJob.id,
-      });
-    }
-
-    reply.code(202);
-    return { jobId: buildJob.id, status: 'queued' };
+    await fastify.jobRunner.log(buildJob.id, '[queued] Build accepted. Preparation continues in the background.');
+    fastify.jobRunner.wake();
+    return reply.code(202).send({ jobId: buildJob.id, status: 'queued' });
   });
 
   /**
@@ -359,22 +238,26 @@ export default async function buildRoutes(fastify) {
       });
     }
 
-    // Forward cancellation to vnm-builder (best-effort)
+    const work = await fastify.prisma.workJob.findUnique({ where: { id: jobId } });
+    if (work?.stage === 'publishing') return reply.code(409).send({ message: 'Build publication is finishing. Wait for its result.' });
+    // During API preparation, abort the extraction process before touching the builder.
+    const preparing = work && !['builder-queued', 'unpacking-rpa', 'optimizing', 'packaging', 'publishing', 'building'].includes(work.stage);
     try {
-      await fetch(`${BUILDER_URL}/build/${jobId}`, {
+      if (!preparing) {
+      const response = await fetch(`${BUILDER_URL}/build/${jobId}`, {
         method: 'DELETE',
         signal: AbortSignal.timeout(5000),
       });
+      if (!response.ok) return reply.code(409).send({ message: 'Build already finished or could not be cancelled. Refresh its status.' });
+      }
     } catch (err) {
-      request.log.warn(
-        { err: err.message, jobId },
-        'Failed to forward cancel to vnm-builder (continuing with local update)'
-      );
+      return reply.code(503).send({ message: 'Build worker is unreachable. Cancellation was not confirmed.' });
     }
+    if (!await fastify.jobRunner.cancel(jobId)) return reply.code(409).send({ message: 'Build finished while cancellation was requested.' });
 
     // Update the job status
-    const updatedJob = await fastify.prisma.buildJob.update({
-      where: { id: jobId },
+    await fastify.prisma.buildJob.updateMany({
+      where: { id: jobId, status: { in: ['queued', 'building'] } },
       data: {
         status: 'cancelled',
         completedAt: new Date(),
@@ -383,13 +266,13 @@ export default async function buildRoutes(fastify) {
 
     // Reset the game's build status
     await fastify.prisma.game.updateMany({
-      where: { buildJobId: jobId },
+      where: { buildJobId: jobId, buildStatus: { in: ['queued', 'building'] } },
       data: {
-        buildStatus: 'not_built',
-        buildJobId: null,
+        buildStatus: await buildFailureStatus(await fastify.prisma.game.findUnique({ where: { id: job.gameId } })),
       },
     });
 
-    return updatedJob;
+    return fastify.prisma.buildJob.findUnique({ where: { id: jobId } });
   });
 }
+import { buildFailureStatus } from '../services/buildJobs.js';

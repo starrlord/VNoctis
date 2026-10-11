@@ -28,7 +28,7 @@ function generateFingerprint(dirName) {
  * @param {string} dirPath - Absolute path to the candidate directory.
  * @returns {Promise<boolean>}
  */
-async function isRenpyProject(dirPath) {
+export async function isRenpyProject(dirPath) {
   // Check for renpy/ directory
   try {
     const renpyDir = join(dirPath, 'renpy');
@@ -59,7 +59,7 @@ async function isRenpyProject(dirPath) {
  * @param {string} dirPath - Absolute path to the candidate directory.
  * @returns {Promise<boolean>}
  */
-async function hasWebBuildZip(dirPath) {
+export async function hasWebBuildZip(dirPath) {
   try {
     const entries = await readdir(dirPath);
     return entries.some((f) => f.endsWith('.zip'));
@@ -94,7 +94,7 @@ export async function scanGamesDirectory(gamesPath, prisma, logger) {
   }
 
   const entries = await readdir(gamesPath, { withFileTypes: true });
-  const subdirs = entries.filter((e) => e.isDirectory());
+  const subdirs = entries.filter((e) => e.isDirectory() && e.name !== '.vnm-staging');
 
   const webBuildsPath = process.env.WEB_BUILDS_PATH || '/web-builds';
   const discoveredIds = [];
@@ -272,14 +272,17 @@ export async function scanGamesDirectory(gamesPath, prisma, logger) {
           where: { gameId },
           select: { id: true },
         });
+        const retainedJobs = await prisma.workJob.findMany({ where: { gameId }, select: { id: true } });
+        const retainedIds = retainedJobs.map(job => job.id);
         for (const job of buildJobs) {
+          if (retainedIds.includes(job.id)) continue;
           try {
             await rm(join(webBuildsPath, 'logs', `${job.id}.log`), { force: true });
           } catch {
             // Best-effort log cleanup
           }
         }
-        await prisma.buildJob.deleteMany({ where: { gameId } });
+        await prisma.buildJob.deleteMany({ where: { gameId, id: { notIn: retainedIds } } });
       } catch (err) {
         log.warn?.({ gameId, err: err?.message }, 'Failed to clean up BuildJobs for removed game');
       }
@@ -299,6 +302,8 @@ export async function scanGamesDirectory(gamesPath, prisma, logger) {
   const validDirNames = new Set(activeGames.map((g) => g.directoryName));
   // 'logs' is the build-log directory — always keep it
   validDirNames.add('logs');
+  validDirNames.add('.vnm-staging');
+  validDirNames.add('.vnm-jobs');
 
   // Clean up orphaned web-build directories (e.g. old hash-named folders)
   let orphansRemoved = 0;

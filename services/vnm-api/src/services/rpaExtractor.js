@@ -42,7 +42,7 @@ export async function pathExists(p) {
  * @param {string} gamePath - Path to the game root (e.g. /games/MyGame).
  * @param {import('pino').Logger} logger
  */
-export async function extractRpaArchives(gamePath, logger) {
+export async function extractRpaArchives(gamePath, logger, { signal } = {}) {
   const gameSubdir = join(gamePath, 'game');
 
   // If there's no game/ subdirectory this isn't a standard Ren'Py layout
@@ -53,21 +53,23 @@ export async function extractRpaArchives(gamePath, logger) {
 
   if (rpaFiles.length === 0) return;
 
-  logger.info?.({ count: rpaFiles.length, files: rpaFiles }, 'Found .rpa archives — extracting');
+  await logger.info?.({ count: rpaFiles.length, files: rpaFiles }, 'Found .rpa archives — extracting');
 
   for (const rpaFile of rpaFiles) {
+    signal?.throwIfAborted();
     const rpaPath = join(gameSubdir, rpaFile);
     const rpaStats = await stat(rpaPath);
     const sizeMB = Math.round(rpaStats.size / (1024 * 1024));
 
-    logger.info?.({ file: rpaFile, sizeMB }, 'Extracting .rpa archive');
+    await logger.info?.({ file: rpaFile, sizeMB }, 'Extracting .rpa archive');
 
     try {
-      await execFileAsync('unrpa', ['-p', gameSubdir, rpaPath]);
+      await execFileAsync('unrpa', ['-p', gameSubdir, rpaPath], { signal });
       await rm(rpaPath, { force: true });
-      logger.info?.({ file: rpaFile }, '.rpa archive extracted and removed');
+      await logger.info?.({ file: rpaFile }, '.rpa archive extracted and removed');
     } catch (err) {
-      logger.warn?.(
+      if (signal?.aborted) throw err;
+      await logger.warn?.(
         { err: err.message, file: rpaFile },
         'Failed to extract .rpa archive — leaving it in place'
       );

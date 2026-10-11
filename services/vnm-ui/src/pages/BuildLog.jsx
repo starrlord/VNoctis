@@ -2,16 +2,16 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import useBuildLog from '../hooks/useBuildLog';
 import api from '../hooks/useApi';
+import { stageLabels } from '../utils/jobLog';
 
 /**
- * Standalone build log viewer page — opened in a new tab from the
- * GameDetailModal or BuildProgress badge.
+ * Standalone retained job log viewer, linked from Jobs and game launchers.
  *
  * Route: /build-log/:jobId
  */
 export default function BuildLog() {
   const { jobId } = useParams();
-  const { lines, connected, error } = useBuildLog(jobId);
+  const { lines, connected, error, stage, status: liveStatus, omitted } = useBuildLog(jobId);
   const [job, setJob] = useState(null);
   const [jobError, setJobError] = useState(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -23,7 +23,7 @@ export default function BuildLog() {
   // Fetch build job metadata
   useEffect(() => {
     if (!jobId) return;
-    api.get(`/build/${jobId}`)
+    api.get(`/jobs/${jobId}`)
       .then(setJob)
       .catch((err) => setJobError(err.message || 'Failed to load build job'));
   }, [jobId]);
@@ -31,7 +31,7 @@ export default function BuildLog() {
   // Auto-scroll when new lines arrive (if enabled)
   useEffect(() => {
     if (autoScroll) {
-      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      logEndRef.current?.scrollIntoView({ behavior: 'auto' });
     }
   }, [lines, autoScroll]);
 
@@ -63,12 +63,13 @@ export default function BuildLog() {
   const statusConfig = {
     queued:    { label: 'Queued',    color: 'text-yellow-400', bg: 'bg-yellow-500/10', ring: 'ring-yellow-500/30' },
     building:  { label: 'Building',  color: 'text-blue-400',   bg: 'bg-blue-500/10',   ring: 'ring-blue-500/30' },
+    running:   { label: 'Processing', color: 'text-blue-400', bg: 'bg-blue-500/10', ring: 'ring-blue-500/30' },
     done:      { label: 'Completed', color: 'text-green-400',  bg: 'bg-green-500/10',  ring: 'ring-green-500/30' },
     failed:    { label: 'Failed',    color: 'text-red-400',    bg: 'bg-red-500/10',    ring: 'ring-red-500/30' },
     cancelled: { label: 'Cancelled', color: 'text-gray-400',   bg: 'bg-gray-500/10',   ring: 'ring-gray-500/30' },
   };
 
-  const status = statusConfig[job?.status] || statusConfig.queued;
+  const status = statusConfig[liveStatus || job?.status] || statusConfig.queued;
 
   // Line coloring based on content
   const getLineClass = (line) => {
@@ -96,9 +97,9 @@ export default function BuildLog() {
       <header className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Link
-            to="/"
+            to="/admin/jobs"
             className="text-gray-400 hover:text-white transition-colors shrink-0"
-            title="Back to Library"
+            title="Back to Jobs"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
@@ -109,15 +110,25 @@ export default function BuildLog() {
               <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
               </svg>
-              Build Log
+              {job?.kind === 'import' ? 'Import Log' : 'Build Log'}
             </h1>
             <p className="text-xs text-gray-500 font-mono truncate">
-              Job: {jobId}
+              {job?.title || jobId} · {stageLabels[stage] || stage || status.label}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
+          <button className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm" onClick={async () => {
+            try {
+              const response = await fetch(`/api/v1/jobs/${encodeURIComponent(jobId)}/log?download=1`, { headers: { Authorization: `Bearer ${localStorage.getItem('vnm-token') || ''}` } });
+              if (!response.ok) throw new Error('Log download failed.');
+              const url = URL.createObjectURL(await response.blob());
+              const link = document.createElement('a'); link.href = url; link.download = `${jobId}.log`; link.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (error) { setJobError(error.message); }
+          }}>Download full log</button>
+          {omitted > 0 && <span className="text-xs text-gray-400">Showing the latest 5,000 lines. Download for earlier output.</span>}
           {/* Status badge */}
           {job && (
             <span className={`px-3 py-1 rounded-full text-xs font-semibold ring-1 ${status.color} ${status.bg} ${status.ring}`}>

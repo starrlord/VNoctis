@@ -64,7 +64,7 @@ export default function useBuildStatus(gameId) {
       setBuildState(state);
 
       // If the game references an active build job, track it
-      if (data.buildJobId && (data.buildStatus === 'queued' || data.buildStatus === 'building')) {
+      if (data.buildJobId) {
         setJobId(data.buildJobId);
       } else {
         setJobId(null);
@@ -114,7 +114,6 @@ export default function useBuildStatus(gameId) {
         if (job.status === 'cancelled') {
           clearInterval(pollRef.current);
           pollRef.current = null;
-          setJobId(null);
           // Refetch game to get canonical state from the API
           await fetchGame();
         }
@@ -134,10 +133,10 @@ export default function useBuildStatus(gameId) {
   // ------------------------------------------------------------------
 
   /** Queue a new web build for the game. */
-  const triggerBuild = useCallback(async ({ compressAssets = true } = {}) => {
+  const triggerBuild = useCallback(async ({ compressAssets = true, forceRecompress = false } = {}) => {
     try {
       setBuildState('queued');
-      const result = await api.post(`/build/${gameId}`, { compressAssets });
+      const result = await api.post(`/build/${gameId}`, { compressAssets, forceRecompress });
       setJobId(result.jobId);
     } catch (err) {
       setBuildState('failed');

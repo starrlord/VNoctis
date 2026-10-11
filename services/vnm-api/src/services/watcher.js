@@ -45,6 +45,7 @@ export class DirectoryWatcher {
     // Try native fs.watch
     try {
       this._fsWatcher = watch(this.gamesPath, { recursive: true }, (eventType, filename) => {
+        if (filename && String(filename).split(/[/\\]/)[0] === '.vnm-staging') return;
         // Only trigger on 'rename' events (file/dir added/removed)
         if (eventType === 'rename') {
           this._scheduleCallback();
@@ -169,7 +170,7 @@ export class DirectoryWatcher {
     try {
       const entries = await readdir(this.gamesPath, { withFileTypes: true });
       return new Set(
-        entries.filter((e) => e.isDirectory()).map((e) => e.name)
+        entries.filter((e) => e.isDirectory() && e.name !== '.vnm-staging').map((e) => e.name)
       );
     } catch {
       return new Set();

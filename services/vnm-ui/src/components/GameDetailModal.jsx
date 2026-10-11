@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../hooks/useApi';
+import CompressionOptions from './CompressionOptions';
 import ScreenshotLightbox from './ScreenshotLightbox';
 import MetadataEditModal from './MetadataEditModal';
 import {
@@ -29,11 +30,27 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
   const [newTagName, setNewTagName] = useState('');
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [buildTriggered, setBuildTriggered] = useState(false);
+  useEffect(() => {
+    if (!['queued', 'building'].includes(game?.buildStatus)) return;
+    let active = true, timer;
+    const controller = new AbortController();
+    async function poll() {
+      try {
+        const data = await api.get(`/library/${gameId}`, { signal: controller.signal });
+        if (!active) return;
+        setGame(data);
+        if (!['queued', 'building'].includes(data.buildStatus)) { setBuildTriggered(false); return; }
+      } catch { /* Keep the last known state while reconnecting. */ }
+      if (active) timer = setTimeout(poll, 2000);
+    }
+    timer = setTimeout(poll, 2000);
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [gameId, game?.buildStatus]);
   const [refreshTriggered, setRefreshTriggered] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBuildOptions, setShowBuildOptions] = useState(false);
-  const [compressAssets, setCompressAssets] = useState(true);
+  const [buildOptions, setBuildOptions] = useState({ compressAssets: true, forceRecompress: false, ready: false });
   const [deleting, setDeleting] = useState(false);
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
@@ -129,11 +146,13 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
     if (buildTriggered) return;
     setBuildTriggered(true);
     try {
-      await api.post(`/build/${gameId}`, { compressAssets });
-    } catch {
-      // Best-effort — toast would be nice but out of scope
+        const result = await api.post(`/build/${gameId}`, { compressAssets: buildOptions.compressAssets, forceRecompress: buildOptions.forceRecompress });
+        setGame(previous => ({ ...previous, buildStatus: 'queued', buildJobId: result.jobId }));
+      } catch (error) {
+        setBuildTriggered(false);
+        setError(error.message || 'Could not queue the build');
     }
-  }, [gameId, buildTriggered, compressAssets]);
+  }, [gameId, buildTriggered, buildOptions]);
 
   const handleRefreshMetadata = useCallback(async () => {
     if (refreshTriggered) return;
@@ -335,19 +354,15 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                     </span>
                   )}
                   {buildBadge && (
-                    buildLogStatuses.includes(game?.buildStatus) && game?.buildJobId ? (
-                      <a
-                        href={`/build-log/${game.buildJobId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    isAdmin && buildLogStatuses.includes(game?.buildStatus) && game?.buildJobId ? (
+                      <Link
+                        to={`/build-log/${game.buildJobId}`}
+                          onClick={onClose}
                         className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer hover:ring-2 ${isBuildFailed ? 'hover:ring-red-400/50' : 'hover:ring-gray-400/50'} transition-all ${buildBadge.colorClass} inline-flex items-center gap-1`}
-                        title="Open build log in new tab"
+                        title="View build log"
                       >
                         {buildBadge.label}
-                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                        </svg>
-                      </a>
+                      </Link>
                     ) : (
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${buildBadge.colorClass}`}>
                         {buildBadge.label}
@@ -370,18 +385,14 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                     {isBuilt ? '▶ Play' : '▶ Build & Play'}
                   </button>
                   {isAdmin && (
-                    buildTriggered ? (
-                      <a
-                        href={`/build-log/${game?.buildJobId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    (buildTriggered || ['queued', 'building'].includes(game?.buildStatus)) && game?.buildJobId ? (
+                      <Link
+                        to={`/build-log/${game?.buildJobId}`}
+                          onClick={onClose}
                         className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm inline-flex items-center gap-1.5"
                       >
                         🔨 View Build Log
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                        </svg>
-                      </a>
+                      </Link>
                     ) : (
                       <button
                         onClick={handleBuild}
@@ -731,22 +742,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
             <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
               Choose how to build <strong>{title}</strong> for the web.
             </p>
-            <label className="flex items-start gap-3 mb-5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={compressAssets}
-                onChange={(e) => setCompressAssets(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-700"
-              />
-              <div>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Compress assets
-                </span>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Extracts .rpa archives and compresses images for a smaller web build. Takes longer but produces a faster-loading game.
-                </p>
-              </div>
-            </label>
+            <CompressionOptions gameId={gameId} onChange={setBuildOptions} />
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowBuildOptions(false)}
@@ -756,6 +752,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
               </button>
               <button
                 onClick={handleConfirmBuild}
+                disabled={!buildOptions.ready}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors"
               >
                 🔨 Start Build

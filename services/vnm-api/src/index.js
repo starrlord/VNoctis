@@ -21,6 +21,9 @@ import favoritesRoutes from './routes/favorites.js';
 import usersRoutes from './routes/users.js';
 import settingsRoutes from './routes/settings.js';
 import publishRoutes from './routes/publish.js';
+import jobsRoutes from './routes/jobs.js';
+import { createJobRunner } from './services/jobRunner.js';
+import { registerBuildJobs } from './services/buildJobs.js';
 import { scanGamesDirectory } from './services/scanner.js';
 import { VNDBClient } from './services/vndbClient.js';
 import { SteamClient } from './services/steamClient.js';
@@ -187,6 +190,14 @@ await fastify.register(multipart, {
 });
 
 // ── API routes (all prefixed under /api/v1) ───────────────
+fastify.decorate('jobRunner', createJobRunner(fastify, {
+  storage: process.env.JOB_STORAGE_PATH || '/data/import-jobs',
+  logs: process.env.WEB_BUILDS_PATH || '/web-builds',
+}));
+registerBuildJobs(fastify);
+fastify.addHook('onReady', () => fastify.jobRunner.start());
+fastify.addHook('onClose', () => fastify.jobRunner.stop());
+await fastify.register(jobsRoutes, { prefix: '/api/v1' });
 await fastify.register(healthRoutes, { prefix: '/api/v1' });
 await fastify.register(libraryRoutes, { prefix: '/api/v1' });
 await fastify.register(buildRoutes, { prefix: '/api/v1' });
@@ -224,7 +235,6 @@ fastify.addHook('onRequest', async (request, reply) => {
     url.startsWith('/api/v1/auth/') ||
     url.startsWith('/api/v1/internal/') ||
     url.startsWith('/api/v1/covers/') ||
-    /^\/api\/v1\/build\/[^/]+\/log/.test(url) ||
     /^\/api\/v1\/publish\/[^/]+\/progress/.test(url)
   ) {
     return;
@@ -259,6 +269,8 @@ fastify.addHook('onRequest', async (request, reply) => {
 
     // Admin-only routes
     const isAdminRoute =
+      url.startsWith('/api/v1/jobs') ||
+      /^\/api\/v1\/build\/[^/]+\/log/.test(url) ||
       url.startsWith('/api/v1/users') ||
       url.startsWith('/api/v1/library/scan') ||
       url.startsWith('/api/v1/library/import') ||
@@ -408,19 +420,17 @@ const start = async () => {
             "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
           )
         `);
-        // ALTER TABLE ADD COLUMN is idempotent in SQLite only when column is absent;
-        // use try/catch for each column so existing installs don't fail.
-        for (const col of [
-          `ALTER TABLE "Game" ADD COLUMN "publishStatus" TEXT NOT NULL DEFAULT 'not_published'`,
-          `ALTER TABLE "Game" ADD COLUMN "publishedAt" DATETIME`,
-          `ALTER TABLE "Game" ADD COLUMN "publishedVersion" TEXT`,
-        ]) {
-          try { await prisma.$executeRawUnsafe(col); } catch { /* column already exists */ }
-        }
         fastify.log.info('R2 schema additions applied successfully');
       } catch (r2SchemaErr) {
         fastify.log.error({ err: r2SchemaErr.message }, 'Failed to apply R2 schema additions');
       }
+    }
+
+    // Prisma's shared Game model selects these fields in both deployment modes.
+    // Older non-R2 databases lack them; add placeholders without R2-only tables.
+    const gameColumns = await prisma.$queryRawUnsafe('PRAGMA table_info("Game")');
+    for (const [name, definition] of [['publishStatus', "TEXT NOT NULL DEFAULT 'not_published'"], ['publishedAt', 'DATETIME'], ['publishedVersion', 'TEXT']]) {
+      if (!gameColumns.some(column => column.name === name)) await prisma.$executeRawUnsafe('ALTER TABLE "Game" ADD COLUMN "' + name + '" ' + definition);
     }
 
     // ── Admin user seed & favorite migration ────────────────

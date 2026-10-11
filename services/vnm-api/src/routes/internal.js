@@ -61,7 +61,7 @@ export default async function internalRoutes(fastify) {
    */
   fastify.post('/internal/build/:jobId/status', async (request, reply) => {
     const { jobId } = request.params;
-    const { status, error, webBuildPath } = request.body || {};
+    const { status, error, webBuildPath, stage } = request.body || {};
 
     if (!status || !['building', 'done', 'failed'].includes(status)) {
       return reply.code(400).send({
@@ -82,13 +82,15 @@ export default async function internalRoutes(fastify) {
       });
     }
 
+    if (['done', 'failed', 'cancelled'].includes(job.status)) return { ok: true, ignored: true };
+
     const now = new Date();
 
     // ── Update BuildJob ───────────────────────────────────
     const jobUpdate = { status };
 
     if (status === 'building') {
-      jobUpdate.startedAt = now;
+      if (!job.startedAt) jobUpdate.startedAt = now;
     }
 
     if (status === 'done' || status === 'failed') {
@@ -102,11 +104,6 @@ export default async function internalRoutes(fastify) {
     if (status === 'done') {
       jobUpdate.logPath = `/web-builds/logs/${jobId}.log`;
     }
-
-    await fastify.prisma.buildJob.update({
-      where: { id: jobId },
-      data: jobUpdate,
-    });
 
     // ── Update associated Game ────────────────────────────
     const gameUpdate = {};
@@ -124,15 +121,24 @@ export default async function internalRoutes(fastify) {
     }
 
     if (status === 'failed') {
-      gameUpdate.buildStatus = 'failed';
+      gameUpdate.buildStatus = await buildFailureStatus(await fastify.prisma.game.findUnique({ where: { id: job.gameId } }));
     }
 
-    if (Object.keys(gameUpdate).length > 0) {
-      await fastify.prisma.game.update({
-        where: { id: job.gameId },
-        data: gameUpdate,
-      });
-    }
+    const accepted = await fastify.prisma.$transaction(async tx => {
+      const changed = await tx.buildJob.updateMany({ where: { id: jobId, status: { in: ['queued', 'building'] } }, data: jobUpdate });
+      if (!changed.count) return false;
+    await tx.workJob.updateMany({ where: { id: jobId, status: { in: ['queued', 'running'] } }, data: {
+      status: status === 'building' ? 'running' : status,
+      stage: status === 'building' ? (['unpacking-rpa', 'optimizing', 'packaging', 'publishing', 'building'].includes(stage) ? stage : 'building') : status,
+      ...(status !== 'building' ? { completedAt: now } : {}),
+      ...(error ? { error: String(error).slice(0, 4000) } : {}),
+    } });
+
+
+      await tx.game.updateMany({ where: { id: job.gameId, buildJobId: jobId }, data: gameUpdate });
+      return true;
+    });
+    if (!accepted) return { ok: true, ignored: true };
 
     request.log.info(
       { jobId, gameId: job.gameId, status },
@@ -173,6 +179,7 @@ export default async function internalRoutes(fastify) {
     }
 
     fastify.buildLogBuffers[jobId].push(line);
+    if (fastify.buildLogBuffers[jobId].length > 2000) fastify.buildLogBuffers[jobId].shift();
 
     // Broadcast to SSE subscribers
     if (fastify.buildLogSubscribers && fastify.buildLogSubscribers[jobId]) {
@@ -188,3 +195,4 @@ export default async function internalRoutes(fastify) {
     return { ok: true };
   });
 }
+import { buildFailureStatus } from '../services/buildJobs.js';
