@@ -11,6 +11,10 @@ RUN npx prisma generate
 
 COPY . .
 
+# Normalize only host-supplied source permissions before the final-stage copy.
+# npm-installed dependencies already have their normal container permissions.
+RUN chmod -R a+rX /app/src /app/prisma /app/templates
+
 # ── Stage 2: Production ───────────────────────────────
 FROM node:24-alpine
 
@@ -24,7 +28,7 @@ RUN ALPINE_VER=$(cat /etc/alpine-release | cut -d. -f1,2) \
 WORKDIR /app
 
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
+COPY --from=builder --chmod=0644 /app/package.json ./
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/templates ./templates

@@ -9,6 +9,8 @@
  *
  * @param {import('fastify').FastifyInstance} fastify
  */
+import { writeTransaction } from '../services/saveHistory.js';
+
 export default async function internalRoutes(fastify) {
   // ── Client-side error reporting ───────────────────────────
   /**
@@ -61,7 +63,13 @@ export default async function internalRoutes(fastify) {
    */
   fastify.post('/internal/build/:jobId/status', async (request, reply) => {
     const { jobId } = request.params;
-    const { status, error, webBuildPath } = request.body || {};
+    const { status, error, webBuildPath, saveDirectory = null } = request.body || {};
+
+    if (saveDirectory !== null && (typeof saveDirectory !== 'string' || !saveDirectory || saveDirectory.length > 400 ||
+        /[\\:\x00-\x1f]/.test(saveDirectory) || saveDirectory.split('/').some(p => !p || p === '.' || p === '..') ||
+        saveDirectory.split('/')[0] === 'tokens')) {
+      return reply.code(400).send({ code: 'INVALID_SAVE_DIRECTORY', message: 'Invalid build save directory.' });
+    }
 
     if (!status || !['building', 'done', 'failed'].includes(status)) {
       return reply.code(400).send({
@@ -103,11 +111,6 @@ export default async function internalRoutes(fastify) {
       jobUpdate.logPath = `/web-builds/logs/${jobId}.log`;
     }
 
-    await fastify.prisma.buildJob.update({
-      where: { id: jobId },
-      data: jobUpdate,
-    });
-
     // ── Update associated Game ────────────────────────────
     const gameUpdate = {};
 
@@ -118,6 +121,7 @@ export default async function internalRoutes(fastify) {
     if (status === 'done') {
       gameUpdate.buildStatus = 'built';
       gameUpdate.builtAt = now;
+      gameUpdate.webSaveDirectory = saveDirectory;
       if (webBuildPath) {
         gameUpdate.webBuildPath = webBuildPath;
       }
@@ -127,12 +131,16 @@ export default async function internalRoutes(fastify) {
       gameUpdate.buildStatus = 'failed';
     }
 
-    if (Object.keys(gameUpdate).length > 0) {
-      await fastify.prisma.game.update({
-        where: { id: job.gameId },
-        data: gameUpdate,
-      });
-    }
+    // Publish completion and its destination together, using the save writer's
+    // queue so imports cannot observe half of a completed build callback.
+    await writeTransaction(fastify.prisma, async tx => {
+      await tx.buildJob.update({ where: { id: jobId }, data: jobUpdate });
+      if (Object.keys(gameUpdate).length > 0) {
+        await tx.game.update({ where: { id: job.gameId }, data: gameUpdate, select: { id: true } });
+        // Runtime metadata belongs to the previous build until the new one runs.
+        if (status === 'done') await tx.saveRuntimeDirectory.deleteMany({ where: { gameId: job.gameId } });
+      }
+    });
 
     request.log.info(
       { jobId, gameId: job.gameId, status },

@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import { collectBlobs, writeTransaction } from '../services/saveHistory.js';
 
 /** Valid roles for user accounts */
 const VALID_ROLES = ['admin', 'viewer'];
@@ -222,8 +223,9 @@ export default async function usersRoutes(fastify, opts) {
       }
     }
 
-    await fastify.prisma.user.delete({
-      where: { id: userId },
+    await writeTransaction(fastify.prisma, async tx => {
+      await tx.user.delete({ where: { id: userId } });
+      await collectBlobs(tx);
     });
 
     reply.code(204).send();

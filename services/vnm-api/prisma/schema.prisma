@@ -33,11 +33,13 @@ model Game {
   buildJobId        String?                               // Most recent build job ID
   builtAt           DateTime?                             // Last successful build time
   webBuildPath      String?                               // URL to compiled web export
+  webSaveDirectory  String?                               // Literal default captured by the web build
   metadataSource    String         @default("unmatched")  // auto|manual|unmatched
   metadataFetchedAt DateTime?                             // Last VNDB fetch time
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   favoritedBy       UserFavorite[]                        // Per-user favorites (replaces global favorite)
+  saveDirectories  SaveRuntimeDirectory[]
 }
 
 model User {
@@ -48,6 +50,127 @@ model User {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   favorites    UserFavorite[]
+  saves        SaveSyncState[]
+  saveVersions SaveVersion[]
+  saveReceipts SaveUploadReceipt[]
+  saveDirectories SaveRuntimeDirectory[]
+  saveIdentities SaveGameIdentity[]
+}
+
+// Identity survives absent games so backups can be restored before game import.
+model SaveGameIdentity {
+  userId String
+  gameId String
+  directoryName String?
+  gameTitle String
+  saveDirectory String?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([userId, gameId])
+}
+
+// Runtime metadata is independent of snapshots: launching need not create a save.
+model SaveRuntimeDirectory {
+  userId    String
+  gameId    String
+  directory String
+  updatedAt DateTime @updatedAt
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game      Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@id([userId, gameId])
+}
+
+model SaveSyncState {
+  userId    String
+  gameId    String
+  gameTitle String   @default("")
+  uploadId  String?
+  currentVersionId String?
+  revision  Int      @default(1)
+  payload   String   // Compact live manifest, or legacy inline base64 snapshot.
+  checksum  String
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files     SaveCurrentFile[]
+
+  @@id([userId, gameId])
+}
+
+// History is separate from the live Ren'Py filesystem. Identical file bytes
+// are shared by manifests even when Ren'Py rotates them between autosave slots.
+model SaveFileBlob {
+  hash     String @id
+  data     Bytes
+  size     Int
+  preview  String? // Bounded presentation-only JSON, cached by immutable hash.
+  files    SaveVersionFile[]
+  currentFiles SaveCurrentFile[]
+}
+
+model SaveCurrentFile {
+  userId String
+  gameId String
+  path   String
+  mtime  Float
+  hash   String
+  state  SaveSyncState @relation(fields: [userId, gameId], references: [userId, gameId], onDelete: Cascade)
+  blob   SaveFileBlob @relation(fields: [hash], references: [hash])
+
+  @@id([userId, gameId, path])
+  @@index([hash])
+}
+
+model SaveVersion {
+  id           String   @id @default(uuid())
+  userId       String
+  gameId       String
+  gameTitle    String
+  kind         String   // auto | manual | checkpoint | restored
+  alternate    Boolean  @default(false)
+  branchId     String?
+  baseRevision Int
+  revision     Int
+  deviceLabel  String
+  checksum     String
+  saveChecksum String
+  byteSize     Int
+  restoredFrom String?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files        SaveVersionFile[]
+
+  @@index([userId, gameId, createdAt])
+  @@index([userId, gameId, branchId])
+}
+
+model SaveVersionFile {
+  versionId String
+  path      String
+  mtime     Float
+  hash      String
+  version   SaveVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  blob      SaveFileBlob @relation(fields: [hash], references: [hash])
+
+  @@id([versionId, path])
+  @@index([hash])
+}
+
+// Lightweight receipts outlive pruned history so lost-response retries remain
+// idempotent even after another device saves or a version expires.
+model SaveUploadReceipt {
+  userId      String
+  gameId      String
+  uploadId    String
+  checksum    String
+  revision    Int
+  disposition String
+  versionId   String?
+  branchId    String?
+  saveChecksum String
+  createdAt   DateTime @default(now())
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, gameId, uploadId])
 }
 
 model UserFavorite {

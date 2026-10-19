@@ -3,7 +3,11 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import useBuildStatus from '../hooks/useBuildStatus';
 import PlayerChrome from '../components/PlayerChrome';
 import BuildProgress from '../components/BuildProgress';
-import SaveWarningToast from '../components/SaveWarningToast';
+import useAuth from '../hooks/useAuth';
+import SaveSyncToast from '../components/SaveSyncToast';
+import { prepareGameCache } from '../utils/gameCache';
+import { retainGameAccess } from '../utils/offlineGames';
+import { offlineGame } from '../utils/offlineStore';
 
 /**
  * Full in-browser game player page at `/play/:gameId`.
@@ -21,6 +25,24 @@ import SaveWarningToast from '../components/SaveWarningToast';
  */
 export default function Player() {
   const { gameId } = useParams();
+  const { user, isOffline } = useAuth();
+  const [saveStatus, setSaveStatus] = useState('Starting save sync…');
+  const [saveNoticeId, setSaveNoticeId] = useState(0);
+  const [issueNoticeId, setIssueNoticeId] = useState(0);
+  const [cacheLaunch, setCacheLaunch] = useState(null);
+  const [cacheWarning, setCacheWarning] = useState('');
+  useEffect(() => {
+    if (!cacheWarning) return;
+    const timeout = setTimeout(() => setCacheWarning(''), 8000);
+    return () => clearTimeout(timeout);
+  }, [cacheWarning]);
+  useEffect(() => {
+    const notice = event => {
+      if (event.data?.type === 'vnm-game-cache-warning' && event.data.gameId === gameId) setCacheWarning(event.data.message);
+    };
+    navigator.serviceWorker?.addEventListener('message', notice);
+    return () => navigator.serviceWorker?.removeEventListener('message', notice);
+  }, [gameId]);
   const {
     game,
     loading,
@@ -31,6 +53,19 @@ export default function Player() {
     retryBuild,
     markPlayable,
   } = useBuildStatus(gameId);
+  useEffect(() => {
+    let cancelled = false; setCacheLaunch(null);
+    if (game?.webBuildPath) (async () => {
+      try {
+        const old = await offlineGame(game.id).catch(() => null);
+        const result = (isOffline || navigator.onLine === false) && old?.prepared && old.game.builtAt === game.builtAt
+          ? { src: old.scope + 'index.html' } : await prepareGameCache(game);
+        await retainGameAccess(game, user?.userId, result).catch(() => {});
+        if (!cancelled) { setCacheLaunch(result); setCacheWarning(result.warning || ''); }
+      } catch { if (!cancelled) setCacheLaunch({ src: game.webBuildPath + '/index.html' }); }
+    })();
+    return () => { cancelled = true; };
+  }, [game, user?.userId, isOffline]);
 
   // ---- iOS detection ----
   // iOS Safari does NOT support the Fullscreen API on non-<video> elements.
@@ -43,6 +78,22 @@ export default function Player() {
   // ---- Fullscreen ----
   const containerRef = useRef(null);
   const iframeRef = useRef(null);
+  useEffect(() => {
+    setSaveStatus('Starting save sync…');
+    setSaveNoticeId(0);
+    setIssueNoticeId(0);
+    const listener = event => {
+      if (event.origin === window.location.origin && event.source === iframeRef.current?.contentWindow &&
+          event.data?.type === 'vnm-save-status' && typeof event.data.message === 'string') {
+        setSaveStatus(event.data.message);
+        if (event.data.saveUploaded === true) setSaveNoticeId(value => value + 1);
+        if (Number.isSafeInteger(event.data.noticeId)) setIssueNoticeId(value => value + 1);
+      }
+    };
+    window.addEventListener('message', listener);
+    const timeout = setTimeout(() => setSaveStatus(value => value === 'Starting save sync…' ? 'Save sync unavailable — browser saves only' : value), 30000);
+    return () => { window.removeEventListener('message', listener); clearTimeout(timeout); };
+  }, [gameId]);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // ---- Chrome bar visibility (ref-based dedup) ----
@@ -146,7 +197,7 @@ export default function Player() {
   // In landscape (isPortrait=false) the overlay is hidden via CSS, so render.
   // In portrait, wait until the user explicitly taps "Continue in portrait".
   // Desktop users are virtually always landscape, so this is transparent to them.
-  const iframeReady = showIframe && (overlayDismissed || !isPortrait);
+  const iframeReady = showIframe && Boolean(cacheLaunch) && (overlayDismissed || !isPortrait);
 
   // ------------------------------------------------------------------
   // Fullscreen helpers (disabled on iOS where the API is unsupported)
@@ -350,13 +401,16 @@ export default function Player() {
           <>
             <iframe
               ref={iframeRef}
-              src={`${game.webBuildPath}/index.html`}
+              src={`${cacheLaunch.src}?vnmGame=${encodeURIComponent(gameId)}&vnmUser=${encodeURIComponent(user?.userId || '')}&vnmBuild=${encodeURIComponent(game.builtAt || '')}&vnmBridge=${__SAVE_SYNC_VERSION__}`}
               title={title}
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-downloads"
               allow="autoplay; fullscreen"
               className="absolute inset-0 w-full h-full border-0"
             />
-            <SaveWarningToast />
+            <SaveSyncToast key={gameId} message={saveStatus} saveNoticeId={saveNoticeId} noticeId={issueNoticeId} />
+            {cacheWarning && <div role="status" aria-label="Game download notice" className="absolute z-40 top-16 left-4 right-4 sm:left-auto sm:max-w-md rounded-lg bg-amber-950/95 text-amber-100 p-3 text-sm flex items-start gap-3 shadow-lg">
+              <span>{cacheWarning}</span><button aria-label="Dismiss storage notice" className="shrink-0 min-w-[44px] min-h-[44px] rounded-lg hover:bg-amber-900 focus-visible:ring-2 focus-visible:ring-amber-300" onClick={() => setCacheWarning('')}>×</button>
+            </div>}
           </>
         ) : showIframe ? (
           /* Game is built & ready but the portrait overlay is still blocking.

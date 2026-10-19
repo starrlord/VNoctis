@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../hooks/useApi';
 import ScreenshotLightbox from './ScreenshotLightbox';
 import MetadataEditModal from './MetadataEditModal';
+import SaveHistoryModal from './SaveHistoryModal';
 import {
   formatRating,
   formatDate,
@@ -31,6 +32,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
   const [buildTriggered, setBuildTriggered] = useState(false);
   const [refreshTriggered, setRefreshTriggered] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showSaveHistory, setShowSaveHistory] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBuildOptions, setShowBuildOptions] = useState(false);
   const [compressAssets, setCompressAssets] = useState(true);
@@ -81,6 +83,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
 
   // Focus trap & Escape key
   useEffect(() => {
+    if (showSaveHistory) return;
     previousFocusRef.current = document.activeElement;
     modalRef.current?.focus();
 
@@ -112,7 +115,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
       window.removeEventListener('keydown', handleKey);
       previousFocusRef.current?.focus();
     };
-  }, [onClose]);
+  }, [onClose, showSaveHistory]);
 
   // Action handlers
   const handlePlay = useCallback(() => {
@@ -369,6 +372,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
                   >
                     {isBuilt ? '▶ Play' : '▶ Build & Play'}
                   </button>
+                  <button onClick={() => setShowSaveHistory(true)} className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-white font-medium rounded-lg transition-colors duration-200 text-sm"><span aria-hidden="true">💾 </span>Save history</button>
                   {isAdmin && (
                     buildTriggered ? (
                       <a
@@ -766,6 +770,7 @@ export default function GameDetailModal({ gameId, onClose, onDeleted, onHide, on
       )}
 
       {/* Metadata edit modal */}
+      {showSaveHistory && game && <SaveHistoryModal gameId={gameId} title={game.vndbTitle || game.extractedTitle} onClose={() => setShowSaveHistory(false)} onPlay={handlePlay} />}
       {showEditModal && game && (
         <MetadataEditModal
           game={game}

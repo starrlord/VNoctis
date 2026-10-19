@@ -8,6 +8,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "db:migrate": "prisma migrate dev",
@@ -29,7 +30,10 @@
     "fastify": "^5.3.3",
     "jsonwebtoken": "^9.0.3",
     "mime-types": "^2.1.35",
-    "pino": "^9.6.0"
+    "pino": "^9.6.0",
+    "sharp": "^0.35.5",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1"
   },
   "devDependencies": {
     "prisma": "^6.5.0"

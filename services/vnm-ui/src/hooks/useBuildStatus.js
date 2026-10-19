@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from './useApi';
+import { offlineGame } from '../utils/offlineStore';
 
 /**
  * Derives a UI build-state string from the raw game.buildStatus value.
@@ -58,7 +59,7 @@ export default function useBuildStatus(gameId) {
   const fetchGame = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await api.get(`/library/${gameId}`);
+      const data = await api.get(`/library/${gameId}`, { signal: AbortSignal.timeout(5000) });
       setGame(data);
       const state = deriveBuildState(data.buildStatus);
       setBuildState(state);
@@ -69,8 +70,10 @@ export default function useBuildStatus(gameId) {
       } else {
         setJobId(null);
       }
-    } catch {
-      // If fetch fails, leave game null — Player will show an error
+    } catch (error) {
+      if (error.status >= 400 && error.status < 500) { setGame(null); return; }
+      const retained = await offlineGame(gameId).catch(() => null);
+      if (retained?.prepared) { setGame(retained.game); setBuildState(deriveBuildState(retained.game.buildStatus)); }
     } finally {
       setLoading(false);
     }

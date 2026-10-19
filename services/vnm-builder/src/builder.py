@@ -11,6 +11,9 @@ from pathlib import Path
 import httpx
 
 from compressor import create_compressed_overlay, cleanup_overlay
+from save_metadata import create_plain_overlay, prepare_save_metadata, read_save_metadata
+from lazy_saves import prepare_lazy_saves, publish_lazy_marker
+from offline_manifest import write_offline_manifest
 from logger import setup_logger
 
 logger = setup_logger("vnm-builder.builder")
@@ -275,15 +278,23 @@ class RenPyBuilder:
                 except Exception as comp_exc:
                     await _log(
                         f"[vnm-builder] ⚠️ Image compression failed: {comp_exc} "
-                        f"— building uncompressed from original game files"
+                        f"— building uncompressed in a temporary overlay"
                     )
                     logger.warning(
                         "Compression failed job=%s: %s — proceeding uncompressed",
                         job_id, comp_exc,
                     )
-                    build_source = game_path
+                    await asyncio.to_thread(create_plain_overlay, game_path, str(overlay_dir))
+                    build_source = str(overlay_dir)
             else:
                 await _log("[vnm-builder] Asset compression skipped (user opted out)")
+                await asyncio.to_thread(create_plain_overlay, game_path, str(overlay_dir))
+                build_source = str(overlay_dir)
+
+            metadata_file = await asyncio.to_thread(prepare_save_metadata, build_source)
+            lazy_saves = await asyncio.to_thread(prepare_lazy_saves, build_source, self.sdk_path)
+            await _log('[vnm-builder] Lazy save adapter: ' + ('pinned SDK supported' if lazy_saves else 'complete hydration fallback'))
+            env["VNM_SAVE_METADATA"] = str(metadata_file)
 
             # ── Write progressive_download.txt for web build ──
             prog_dl = Path(build_source) / "progressive_download.txt"
@@ -355,6 +366,10 @@ class RenPyBuilder:
                 raise RuntimeError(
                     f"web_build completed but index.html not found in {output_dir}"
                 )
+            if lazy_saves:
+                publish_lazy_marker(index_file)
+            await _log('[vnm-builder] Preparing verified offline asset inventory...')
+            await asyncio.to_thread(write_offline_manifest, output_dir)
             # ── Clean up redundant distributable ZIP ──────────
             # Ren'Py web_build creates a distributable .zip alongside
             # the extracted web root.  Only the extracted folder is
@@ -371,6 +386,7 @@ class RenPyBuilder:
                 job_id,
                 "done",
                 web_build_path=web_build_path,
+                save_directory=read_save_metadata(metadata_file),
             )
             await _log(
                 f"[vnm-builder] ✅ Web build successful! Output at: {output_dir} "
@@ -471,6 +487,7 @@ class RenPyBuilder:
         *,
         error: str | None = None,
         web_build_path: str | None = None,
+        save_directory: str | None = None,
     ):
         """POST a status update back to vnm-api's internal endpoint."""
         url = f"{self.api_url}/api/v1/internal/build/{job_id}/status"
@@ -479,6 +496,8 @@ class RenPyBuilder:
             payload["error"] = error
         if web_build_path is not None:
             payload["webBuildPath"] = web_build_path
+        if status == "done":
+            payload["saveDirectory"] = save_directory
 
         try:
             async with httpx.AsyncClient(timeout=10) as client:

@@ -6,12 +6,14 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Navbar from './components/Navbar';
 import Library from './pages/Library';
 import Player from './pages/Player';
+import Dashboard from './pages/Dashboard';
 import BuildLog from './pages/BuildLog';
 import Gallery from './pages/Gallery';
 import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import R2Settings from './pages/R2Settings';
 import ImportGameModal from './components/ImportGameModal';
+import OrphanedSavesModal from './components/OrphanedSavesModal';
 import useTheme from './hooks/useTheme';
 
 /**
@@ -81,9 +83,10 @@ function RequireAdmin({ children }) {
  */
 function AppContent() {
   const { theme, toggleTheme, isDark } = useTheme();
-  const { user, logout, isAuthenticated, isAdmin } = useAuth();
+  const { user, logout, isAuthenticated, isAdmin, isOffline } = useAuth();
   const [showImportModal, setShowImportModal] = useState(false);
   const [showR2Modal, setShowR2Modal] = useState(false);
+  const [showOrphanedSaves, setShowOrphanedSaves] = useState(false);
   const [r2Mode, setR2Mode] = useState(false);
   const location = useLocation();
 
@@ -107,6 +110,7 @@ function AppContent() {
       {!isLoginPage && !isFullscreenPage && isAuthenticated && (
         <Navbar
           onImport={() => setShowImportModal(true)}
+          onOrphanedSaves={() => setShowOrphanedSaves(true)}
           onR2Settings={() => setShowR2Modal(true)}
           isDark={isDark}
           onToggleTheme={toggleTheme}
@@ -124,10 +128,11 @@ function AppContent() {
             path="/"
             element={
               <RequireAuth>
-                <Library r2Mode={r2Mode} />
+                {isOffline ? <Navigate to="/dashboard" replace /> : <Library r2Mode={r2Mode} />}
               </RequireAuth>
             }
           />
+          <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route
             path="/play/:gameId"
             element={
@@ -156,7 +161,7 @@ function AppContent() {
             path="/gallery"
             element={
               <RequireAuth>
-                <Gallery r2Mode={r2Mode} />
+                {isOffline ? <Navigate to="/dashboard" replace /> : <Gallery r2Mode={r2Mode} />}
               </RequireAuth>
             }
           />
@@ -183,6 +188,9 @@ function AppContent() {
       )}
 
       {/* R2 Settings modal (admin only) */}
+      {!isLoginPage && isAdmin && showOrphanedSaves && (
+        <OrphanedSavesModal onClose={() => setShowOrphanedSaves(false)} />
+      )}
       {!isLoginPage && isAdmin && r2Mode && (
         <R2Settings
           open={showR2Modal}

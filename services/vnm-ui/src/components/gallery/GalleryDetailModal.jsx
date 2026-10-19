@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../hooks/useApi';
 import ScreenshotLightbox from '../ScreenshotLightbox';
+import SaveHistoryModal from '../SaveHistoryModal';
 import {
   formatRating,
   formatDate,
@@ -29,6 +30,7 @@ export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, o
   const [error, setError] = useState(null);
   const [showSpoilerTags, setShowSpoilerTags] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [showSaveHistory, setShowSaveHistory] = useState(false);
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
 
@@ -72,6 +74,7 @@ export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, o
 
   // Focus trap & Escape key
   useEffect(() => {
+    if (showSaveHistory) return;
     previousFocusRef.current = document.activeElement;
     modalRef.current?.focus();
 
@@ -102,7 +105,7 @@ export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, o
       window.removeEventListener('keydown', handleKey);
       previousFocusRef.current?.focus();
     };
-  }, [onClose]);
+  }, [onClose, showSaveHistory]);
 
   const handlePlay = useCallback(() => {
     const path = galleryPlayPath || `/gallery/play/${gameId}`;
@@ -231,6 +234,7 @@ export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, o
                     </svg>
                     Play
                   </button>
+                  <button onClick={() => setShowSaveHistory(true)} className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-md text-sm transition-colors"><span aria-hidden="true">💾</span>Save history</button>
                   {onFavorite && (
                     <button
                       onClick={() => {
@@ -373,6 +377,7 @@ export default function GalleryDetailModal({ gameId, onClose, galleryPlayPath, o
         </div>
       </div>
 
+      {showSaveHistory && game && <SaveHistoryModal gameId={gameId} title={title} onClose={() => setShowSaveHistory(false)} onPlay={handlePlay} />}
       {/* Screenshot lightbox */}
       {lightboxIndex != null && screenshots.length > 0 && (
         <ScreenshotLightbox

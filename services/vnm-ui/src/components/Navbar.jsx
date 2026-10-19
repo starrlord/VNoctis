@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 
 /**
  * Top navigation bar for the VNoctis Manager application.
@@ -12,7 +13,15 @@ import { Link } from 'react-router-dom';
  *   onLogout?: () => void,
  * }} props
  */
-export default function Navbar({ onImport, onR2Settings, isDark = true, onToggleTheme, username, onLogout, isAdmin = false, r2Mode = false }) {
+export default function Navbar({ onImport, onOrphanedSaves, onR2Settings, isDark = true, onToggleTheme, username, onLogout, isAdmin = false, r2Mode = false }) {
+  const menu = useRef(null), location = useLocation();
+  useEffect(() => { menu.current?.removeAttribute('open'); }, [location.pathname]);
+  useEffect(() => {
+    const close = event => { if (!menu.current?.contains(event.target)) menu.current?.removeAttribute('open'); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, []);
+  const item = 'w-full min-h-[44px] px-4 py-2 text-left text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 focus-visible:ring-2 focus-visible:ring-blue-500';
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-3 sm:px-6 shadow-lg transition-colors duration-200">
       {/* Left: App title — clickable, navigates to admin library */}
@@ -21,7 +30,18 @@ export default function Navbar({ onImport, onR2Settings, isDark = true, onToggle
       </Link>
 
       {/* Right: Theme toggle + Import + User controls */}
-      <div className="flex items-center gap-2 sm:gap-4">
+      <details ref={menu} className="xl:hidden relative" onKeyDown={event=>{if(event.key==='Escape'){menu.current.removeAttribute('open');menu.current.querySelector('summary').focus();}}}>
+        <summary aria-label="Open navigation" className="list-none min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-500"><svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg></summary>
+        <div className="absolute right-0 top-14 w-64 max-w-[calc(100vw-2rem)] max-h-[80dvh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl p-2" onClick={event=>{if(event.target.closest('a,button'))menu.current.removeAttribute('open');}}>
+          {username&&<p className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 break-words">{username}</p>}
+          <Link className={'block '+item} to="/dashboard">Your dashboard</Link><Link className={'block '+item} to="/">Library</Link><Link className={'block '+item} to="/gallery">Gallery</Link>
+          {onToggleTheme&&<button className={item} onClick={onToggleTheme}>{isDark?'Light theme':'Dark theme'}</button>}
+          {isAdmin&&<><Link className={'block '+item} to="/admin/users">Users</Link>{onOrphanedSaves&&<button className={item} onClick={onOrphanedSaves}>Orphaned saves</button>}{onImport&&<button className={item} onClick={onImport}>Import game</button>}{r2Mode&&onR2Settings&&<button className={item} onClick={onR2Settings}>R2 settings</button>}</>}
+          {onLogout&&<button className={item+' text-red-600 dark:text-red-400'} onClick={onLogout}>Sign out</button>}
+        </div>
+      </details>
+      <div className="hidden xl:flex items-center gap-2 2xl:gap-3">
+        <Link to="/dashboard" className="min-h-[44px] px-3 py-2 inline-flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg focus-visible:ring-2 focus-visible:ring-blue-500">Dashboard</Link>
         {/* Theme toggle button */}
         {onToggleTheme && (
           <button
@@ -102,6 +122,13 @@ export default function Navbar({ onImport, onR2Settings, isDark = true, onToggle
         )}
 
         {/* R2 Settings button (admin + R2 mode only) */}
+        {isAdmin && onOrphanedSaves && (
+          <button onClick={onOrphanedSaves} title="Orphaned saves" aria-label="Orphaned saves"
+            className="flex items-center gap-2 px-2 sm:px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors duration-200">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M4 8h16v12H4zM3 4h18v4H3zm6 8h6" /></svg>
+            <span className="hidden sm:inline">Saves</span>
+          </button>
+        )}
         {isAdmin && r2Mode && onR2Settings && (
           <button
             onClick={onR2Settings}
@@ -147,7 +174,7 @@ export default function Navbar({ onImport, onR2Settings, isDark = true, onToggle
 
             {/* Username badge */}
             {username && (
-              <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">
+              <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline max-w-28 truncate">
                 {username}
               </span>
             )}

@@ -35,7 +35,7 @@ async function handleResponse(response) {
     if (!window.location.pathname.startsWith('/login')) {
       window.location.href = '/login';
     }
-    throw new Error('Session expired');
+    throw Object.assign(new Error('Session expired'), { status: 401 });
   }
 
   if (!response.ok) {
@@ -47,7 +47,7 @@ async function handleResponse(response) {
     } catch {
       // ignore parse errors — use status text
     }
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: response.status });
   }
 
   // 204 No Content — nothing to parse
@@ -66,9 +66,10 @@ const api = {
    * @param {string} path
    * @returns {Promise<any>}
    */
-  get(path) {
+  get(path, options = {}) {
     return fetch(`${API_BASE}${path}`, {
       headers: authHeaders(),
+      ...options,
     }).then(handleResponse);
   },
 
